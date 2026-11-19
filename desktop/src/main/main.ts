@@ -76,6 +76,8 @@ let config: AppConfig;
 let core: Core | undefined;
 let tray: SauriTray | undefined;
 let setupWindow: BrowserWindow | null = null;
+/** On a normal start (setup already done) the setup window stays hidden; it shows only for first run or an error. */
+let quietStartup = false;
 let portalWindow: BrowserWindow | null = null;
 let controller: SetupController | undefined;
 let started = false;
@@ -129,7 +131,9 @@ function openSetupWindow(): BrowserWindow {
   });
   setupWindow.webContents.on("will-navigate", (event) => event.preventDefault());
   setupWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-  setupWindow.once("ready-to-show", () => setupWindow?.show());
+  setupWindow.once("ready-to-show", () => {
+    if (!quietStartup) setupWindow?.show();
+  });
   setupWindow.on("close", (event) => {
     // Closing setup or an error screen quits; during startup it only hides.
     if (!quitting && started) {
@@ -402,6 +406,7 @@ async function refreshTray(): Promise<void> {
 
 function showError(message: string, canRetry = true): void {
   log.line(`startup stopped: ${message}`);
+  quietStartup = false;
   controller?.show({ view: "error", message, canRetry });
   openSetupWindow().show();
 }
@@ -707,6 +712,7 @@ app.whenReady().then(async () => {
     openLogs,
     quit: () => app.quit(),
   });
+  quietStartup = phaseADone(config);
   openSetupWindow();
   if (!phaseADone(config)) {
     await controller.done;
