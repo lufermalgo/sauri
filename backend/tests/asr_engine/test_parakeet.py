@@ -388,18 +388,51 @@ async def test_the_rollback_switch_and_explicit_whisper_bypass_parakeet(
 # --- one model: Parakeet failures fail the request -----------------------------------------------------
 
 
+DRIFTED = ("the team and that this with you they have what there would " * 6).split()
+
+
+@pytest.mark.parametrize(
+    ("words", "reason", "measured"),
+    [(DRIFTED, pk.REASON_DRIFT, "english_rate=0.9167"), (["no", "se"] * 20, pk.REASON_REPETITION, "words=40")],
+)
+async def test_a_soft_guard_keeps_parakeets_text_and_logs_a_content_free_warning(
+    setup: Setup,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    words: list[str],
+    reason: str,
+    measured: str,
+) -> None:
+    """Imperfect text the user can regenerate with Whisper beats a failed meeting (Spanish full of English jargon)."""
+    setup.install_parakeet()
+    monkeypatch.setenv("SAURI_FAKE_WORDS", json.dumps(words))
+    response = await setup.transcribe(None)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["engine"]["name"] == pk.ENGINE_NAME and len(body["words"]) == len(words)
+    assert body["diagnostics"]["parakeet"]["guard_warning"] == reason
+    assert len(setup.cli_runs()) == 1 and setup.whisper_runs() == []
+    warning = next(record.getMessage() for record in caplog.records if "quality guard" in record.getMessage())
+    assert f"guard={reason}" in warning and measured in warning
+    assert not any(word in warning.split() for word in ("team", "would", "no", "se"))
+
+
+async def test_a_clean_output_carries_no_guard_warning(setup: Setup) -> None:
+    setup.install_parakeet()
+    response = await setup.transcribe(None)
+    assert response.status_code == 200 and response.json()["diagnostics"]["parakeet"]["guard_warning"] is None
+
+
 @pytest.mark.parametrize(
     ("mode", "words", "reason"),
     [
-        ("ok", ("the team and that this with you they have what there would " * 6).split(), pk.REASON_DRIFT),
         ("empty", GOOD, pk.REASON_EMPTY),
-        ("ok", ["no", "se"] * 20, pk.REASON_REPETITION),
         ("nonmono", GOOD, pk.REASON_TIMESTAMPS),
         ("fail", GOOD, pk.REASON_FAILED),
         ("garbage", GOOD, pk.REASON_INVALID),
     ],
 )
-async def test_a_rejected_output_fails_the_request_and_whisper_never_runs(
+async def test_an_unusable_output_or_a_failed_cli_fails_the_request_and_whisper_never_runs(
     setup: Setup,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,

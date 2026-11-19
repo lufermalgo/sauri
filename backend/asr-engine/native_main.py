@@ -2,9 +2,10 @@
 
 One model serves each request. ``local:default`` resolves, before the request runs, to the catalog's preferred
 model (Parakeet ultra) when it is installed and its engine is healthy, and to the built-in Whisper model otherwise;
-``local:<id>`` is that model or a refusal. A Parakeet failure, an output that fails its sanity guard and a
-language Parakeet cannot serve fail the request with a stable code (``model_failed``, ``language_not_supported``):
-no other model transcribes the audio again. The user can retry, or choose Whisper and regenerate.
+``local:<id>`` is that model or a refusal. A Parakeet failure, an unusable output (empty, broken timestamps) and a
+language Parakeet cannot serve fail the request with a stable code (``model_failed``, ``language_not_supported``);
+a text its quality guards flag (drift, repetition) is returned with a logged warning. No other model transcribes
+the audio again: the user can retry, or choose Whisper and regenerate.
 
 Whisper's files (its model and the voice detector it runs with) are needed only by requests that use Whisper:
 the engine starts without them, and such a request is refused with ``model_not_installed`` (or
@@ -640,6 +641,7 @@ def _parakeet_response(
             "parakeet": {
                 "confidence": result.confidence, "rtfx": result.rtfx,
                 "english_stopword_rate": round(result.english_rate, 4),
+                "guard_warning": result.guard_warning,
             },
             "stage_ms": {**stage_ms, "inference": result.cli_ms},
         },

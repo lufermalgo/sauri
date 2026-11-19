@@ -11,10 +11,17 @@ that leaves, a timeout or an engine shutdown kills it. Nothing here downloads an
   and list files on Hugging Face), and the subprocess also gets a registry URL that cannot be reached.
 
 The CLI output is converted to the contract-v2 words and segments and then judged by ``sanity_check``: language
-drift (the stock v3 model slips into English), empty output, repetition loops and broken timestamps. A rejected
-output fails the transcription (``ParakeetRejected``, mapped by ``failure``): Parakeet is the one model of the
-request and no other model transcribes the audio again. The user can retry, or choose Whisper in Settings and
-regenerate. Thresholds come from the environment with the safe defaults below.
+drift (the stock v3 model slips into English), empty output, repetition loops and broken timestamps. Parakeet is
+the one model of the request and no other model transcribes the audio again:
+
+* soft guards (``SOFT_GUARDS``: language drift, repetition) only warn. The text is returned, the log gets the guard
+  and its measured value (never words) and the answer carries ``diagnostics.parakeet.guard_warning``; imperfect
+  text the user can regenerate with Whisper beats a failed meeting (a Spanish meeting full of English jargon);
+* hard guards (empty output, broken timestamps, invalid output) and CLI failures, timeouts and an unverified CLI
+  fail the transcription (``ParakeetRejected``, mapped by ``failure``). The user can retry, or choose Whisper in
+  Settings and regenerate.
+
+Thresholds come from the environment with the safe defaults below.
 
 Logs carry reason codes and counts only, never transcript text or the CLI's stderr.
 """
@@ -143,6 +150,8 @@ REASON_EMPTY: Final = "parakeet_empty_output"
 REASON_DRIFT: Final = "parakeet_language_drift"
 REASON_REPETITION: Final = "parakeet_repetition"
 REASON_TIMESTAMPS: Final = "parakeet_timestamps"
+# Guards that judge the quality of a usable text: they warn and never fail the request.
+SOFT_GUARDS: Final = frozenset({REASON_DRIFT, REASON_REPETITION})
 
 
 class ParakeetRejected(Exception):  # noqa: N818 - the request fails with the code ``failure`` gives
@@ -183,6 +192,7 @@ class ParakeetResult:
     rtfx: float | None
     cli_ms: int
     english_rate: float
+    guard_warning: str | None = None  # a soft guard that flagged the text (content-free code)
 
 
 # --- configuration ------------------------------------------------------------------------------------
@@ -507,8 +517,13 @@ def transcribe(
     cli_ms = round((time.monotonic() - started) * 1000)
     words, confidence = parse_output(document, audio_ms, config)
     reason, rate = sanity_check(words, language, config)
-    if reason is not None:
-        count = sum(len(segment.words) for segment in words.segments)
+    count = sum(len(segment.words) for segment in words.segments)
+    if reason in SOFT_GUARDS:
+        logger.warning(
+            "Parakeet output kept despite a quality guard (guard=%s, english_rate=%.4f, max=%.4f, "
+            "repeat_min_repeats=%d, words=%d)", reason, rate, config.english_rate_max, config.repeat_min_repeats, count,
+        )
+    elif reason is not None:
         logger.warning("Parakeet output rejected (reason=%s, words=%d)", reason, count)
         raise ParakeetRejected(reason)
     rtfx = document.get("rtfx")
@@ -519,6 +534,7 @@ def transcribe(
         float(rtfx) if isinstance(rtfx, int | float) and not isinstance(rtfx, bool) else None,
         cli_ms,
         rate,
+        reason,
     )
 
 

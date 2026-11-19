@@ -206,7 +206,7 @@ Acepta el binario solo si su SHA-256 es una compilación conocida (`known_binary
 | Variable | Valor por defecto | Efecto |
 |---|---|---|
 | `SAURI_ASR_DEFAULT_ENGINE` | `auto` | `auto`: `local:default` es Parakeet si está sano; `whisper`: siempre el Whisper integrado. |
-| `SAURI_ASR_PARAKEET_ENGLISH_RATE_MAX` | `0.01` | Fracción máxima de palabras vacías del inglés en un idioma que no sea inglés; por encima la transcripción falla (`model_failed`). |
+| `SAURI_ASR_PARAKEET_ENGLISH_RATE_MAX` | `0.01` | Fracción máxima de palabras vacías del inglés en un idioma que no sea inglés; por encima se entrega el texto igualmente y se anota un aviso (`guard_warning`). |
 | `SAURI_ASR_PARAKEET_REPEAT_MIN_REPEATS` | `6` | Repeticiones seguidas de una frase (1–6 palabras, ≥ 12 palabras en total) que se consideran un bucle. |
 | `SAURI_ASR_PARAKEET_NONMONOTONIC_MAX_RATIO` | `0.005` | Fracción de palabras con tiempos que retroceden que se tolera (se reparan y se cuentan en `inverted_words`). |
 | `SAURI_ASR_PARAKEET_TIMEOUT_S` | automático (90 s + 5 % del audio, máx. 420 s) | Tiempo máximo del CLI; al agotarlo la transcripción falla (`model_failed`). |
@@ -214,7 +214,7 @@ Acepta el binario solo si su SHA-256 es una compilación conocida (`known_binary
 
 **Límites y tiempos.** El límite de 20 min del worker (`ENGINE_CALL_TIMEOUT_S`) no cambia: Parakeet ocupa 20–90 s por hora de audio y el peor caso es Parakeet al límite de su tiempo (~270 s), sin repetición con Whisper. El portal estima ~2 min por hora con Parakeet y ~10 con Whisper según el motor activo (`frontend/src/processing-estimate.ts`). Los registros solo llevan códigos y cuentas, nunca el texto ni la salida de error del CLI. Un fallo del CLI deja la reunión fallida con la causa `local_model_failed`; el motivo (`parakeet_failed`) queda solo en `asr.log`.
 
-**Debilidades conocidas.** Escribe peor los nombres propios poco comunes, es más literal (conserva muletillas) y pone menos puntuación en los primeros ~20 min; no tiene bloqueo de idioma (la guardia detecta la deriva al inglés y entonces la transcripción falla; con Whisper se puede regenerar). Idea prevista, sin medir: híbrido (Parakeet y repetir con Whisper solo los tramos de baja confianza).
+**Debilidades conocidas.** Escribe peor los nombres propios poco comunes, es más literal (conserva muletillas) y pone menos puntuación en los primeros ~20 min; no tiene bloqueo de idioma (la guardia detecta la deriva al inglés y solo deja un aviso; con Whisper se puede regenerar). Idea prevista, sin medir: híbrido (Parakeet y repetir con Whisper solo los tramos de baja confianza).
 
 ## Diarización nativa Senko (U1 #921)
 
