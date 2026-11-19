@@ -131,12 +131,35 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+/** Opens «Agregar proveedor» and chooses the ChatGPT plan, which creates the provider and opens the sign-in. */
+function addPlan() {
+  fireEvent.click(screen.getByRole("button", { name: t("engines:add") }));
+  fireEvent.click(within(screen.getByRole("dialog", { name: t("engines:addDialog.title") })).getByRole("button", NAME));
+}
+
 describe("Codex (plan ChatGPT) card", () => {
-  it("offers the connect button, says what it serves and that it needs no key", async () => {
+  it("is offered in «Agregar» while not linked, saying it signs in with the account and what it serves", async () => {
     await renderReady([], DISCONNECTED);
+    expect(screen.queryByRole("heading", { level: 4, name: PLAN })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: t("engines:add") }));
+    const option = within(screen.getByRole("dialog", { name: t("engines:addDialog.title") })).getByRole("button", NAME);
+    expect(option).toHaveAccessibleDescription(
+      t("engines:addDialog.line", { where: t("engines:addDialog.where.account"), serves: processList(["summary"]) }),
+    );
+  });
+
+  it("is not offered again once linked", async () => {
+    await renderReady([planProvider()], DISCONNECTED);
+    fireEvent.click(screen.getByRole("button", { name: t("engines:add") }));
+    const list = screen.getByRole("dialog", { name: t("engines:addDialog.title") });
+    expect(within(list).queryByRole("button", NAME)).toBeNull();
+    expect(within(list).getByText(t("engines:addDialog.none"))).toBeInTheDocument();
+  });
+
+  it("offers the connect button on its card, with no key row", async () => {
+    await renderReady([planProvider()], DISCONNECTED);
     const tile = within(card(PLAN));
-    expect(tile.getByText(t("engines:account.unconfigured"), { exact: false })).toBeInTheDocument();
-    expect(tile.getByRole("button", { name: t("engines:account.connectLabel", NAME) })).toHaveTextContent(t("engines:account.connect"));
+    expect(await tile.findByRole("button", { name: t("engines:account.connectLabel", NAME) })).toHaveTextContent(t("engines:account.connect"));
     expect(tile.queryByText(t("engines:card.key"))).toBeNull();
   });
 
@@ -187,8 +210,8 @@ describe("signing in", () => {
   it("creates the provider, shows the code and a button that opens the page in a new tab, polls until connected", async () => {
     await renderReady([], DISCONNECTED, [PENDING, CONNECTED]);
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    fireEvent.click(within(card(PLAN)).getByRole("button", { name: t("engines:account.connectLabel", NAME) }));
-    const dialog = await screen.findByRole("dialog");
+    addPlan();
+    const dialog = await screen.findByRole("dialog", { name: t("engines:account.dialog.title") });
     expect(await within(dialog).findByText("ABCD-1234")).toBeInTheDocument();
     const open = within(dialog).getByRole("link", { name: t("engines:account.dialog.openPage") });
     expect(open).toHaveAttribute("href", "https://auth.openai.com/codex/device");

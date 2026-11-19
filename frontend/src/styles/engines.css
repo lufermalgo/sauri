@@ -1,5 +1,5 @@
 /*
- * Models and engines screen: the preloaded provider cards, the model catalog, the provider dialog and the
+ * Models and engines screen: the linked provider cards and the «Agregar» list, the model catalog, the provider dialog and the
  * engine picker of each process. Only design tokens; the state of a provider is always a word in a badge,
  * never a color alone (DESIGN.md section 10).
  */
@@ -43,7 +43,14 @@
   min-width: 0;
 }
 
-/* Provider mark: a circle with the provider's single-color logo or, without one, its monogram. */
+/* Said when nothing is linked yet, above the «Agregar» tile. */
+.engines-empty {
+  margin: 0;
+  color: var(--ds-fg);
+  font-size: var(--ds-text-sm);
+}
+
+/* Provider mark: a circle with the provider's single-color logo or, without one, a neutral Lucide glyph. */
 .engines-logo {
   display: inline-flex;
   flex: none;
@@ -71,14 +78,10 @@
   height: 56%;
 }
 
-.engines-logo-monogram {
-  font-size: var(--ds-text-sm);
-  font-weight: var(--ds-weight-semibold);
-  line-height: 1;
-}
-
-.engines-logo--sm .engines-logo-monogram {
-  font-size: var(--ds-text-2xs);
+/* A stroked glyph reads lighter than a filled mark of the same box, so it is drawn a little larger. */
+.engines-logo svg.engines-logo-glyph {
+  width: 62%;
+  height: 62%;
 }
 
 .ui-card--dimmed .engines-logo {
@@ -183,20 +186,20 @@
   display: inline-flex;
 }
 
-/* The last tile: a dashed card that is one big button. */
+/* The last tile: a dashed card that is one big button, with a line saying what can be added. */
 .engines-add-card {
   display: flex;
   flex: 1;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: var(--ds-space-2);
+  gap: var(--ds-space-1);
   box-sizing: border-box;
   min-height: 7rem;
   padding: var(--ds-space-4);
   color: var(--ds-fg-muted);
   font: inherit;
-  font-size: var(--ds-text-md);
-  font-weight: var(--ds-weight-medium);
+  text-align: center;
   background: transparent;
   border: 1px dashed var(--ds-border-strong);
   border-radius: var(--ds-radius-card);
@@ -205,10 +208,87 @@
     border-color var(--ds-duration) var(--ds-ease);
 }
 
-.engines-add-card:hover {
+.engines-add-card-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  color: var(--ds-accent-text);
+  font-size: var(--ds-text-md);
+  font-weight: var(--ds-weight-semibold);
+}
+
+.engines-add-card-hint {
+  font-size: var(--ds-text-sm);
+}
+
+.engines-add-card:hover:not(:disabled) {
   color: var(--ds-fg);
   background: var(--ds-fill);
   border-color: var(--ds-accent-line);
+}
+
+.engines-add-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* «Agregar proveedor» list: one row per kind, logo, name and a line of where it runs and what it is for. */
+.engines-add-intro {
+  margin: 0 0 var(--ds-space-3);
+}
+
+.engines-add-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.engines-add-option {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-3);
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 56px;
+  padding: var(--ds-space-2) var(--ds-space-3);
+  color: var(--ds-fg);
+  font: inherit;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--ds-radius-md);
+  cursor: pointer;
+  transition: background-color var(--ds-duration) var(--ds-ease), border-color var(--ds-duration) var(--ds-ease);
+}
+
+.engines-add-option:hover {
+  background: var(--ds-fill-hover);
+  border-color: var(--ds-border);
+}
+
+.engines-add-option-text {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.engines-add-option-name {
+  font-size: var(--ds-text-md);
+  font-weight: var(--ds-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.engines-add-option-line {
+  color: var(--ds-fg-muted);
+  font-size: var(--ds-text-sm);
+}
+
+.engines-add-option-chevron {
+  flex: none;
+  color: var(--ds-fg-subtle);
 }
 
 /* Models catalog */
@@ -363,20 +443,8 @@
   overflow-wrap: anywhere;
 }
 
-/* Provider dialog */
-.engines-kind {
-  display: grid;
-  gap: var(--ds-space-2);
-}
-
-.engines-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ds-space-2);
-}
-
+/* Provider dialog: the provider's kind, fixed, as a chip with its logo. */
 .engines-chip {
-  position: relative;
   display: inline-flex;
   align-items: center;
   gap: var(--ds-space-2);
@@ -386,47 +454,9 @@
   color: var(--ds-fg);
   font-size: var(--ds-text-sm);
   font-weight: var(--ds-weight-medium);
-  background: var(--ds-surface);
+  background: var(--ds-fill);
   border: 1px solid var(--ds-border-strong);
   border-radius: var(--ds-radius-pill);
-  cursor: pointer;
-  transition: background-color var(--ds-duration) var(--ds-ease), border-color var(--ds-duration) var(--ds-ease);
-}
-
-.engines-chip:hover {
-  background: var(--ds-fill);
-}
-
-.engines-chip:has(input:checked) {
-  font-weight: var(--ds-weight-semibold);
-  background: var(--ds-accent-soft);
-  border-color: var(--ds-accent-line);
-  box-shadow: inset 0 0 0 1px var(--ds-accent-line);
-}
-
-.engines-chip:has(input:focus-visible) {
-  outline: var(--ds-focus-width) solid var(--ds-focus);
-  outline-offset: var(--ds-focus-offset);
-}
-
-.engines-chip:has(input:disabled) {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-.engines-chip input {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  opacity: 0;
-  cursor: inherit;
-}
-
-.engines-chip--static {
-  cursor: default;
-  background: var(--ds-fill);
 }
 
 .engines-fixed-type {

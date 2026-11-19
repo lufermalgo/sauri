@@ -1,6 +1,7 @@
+import { useId } from "react";
 import type { LucideIcon } from "lucide-react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
-import type { EngineAccount, EngineKindInfo, EngineProvider, EngineProviderKind } from "@sauri/shared-types";
+import type { EngineAccount, EngineKindInfo, EngineProvider } from "@sauri/shared-types";
 import { Button, Card, Icon, StatusBadge, useTooltip } from "../ui";
 import { isLocalApp, processList } from "./engineLabels";
 import { ProviderLogo } from "./ProviderLogo";
@@ -165,57 +166,24 @@ export function ProviderCard({
   );
 }
 
-interface UnconfiguredCardProps {
-  info: EngineKindInfo;
-  onConfigure: () => void;
-  disabled?: boolean;
-}
-
-function unconfiguredHelp(kind: EngineProviderKind, byAccount: boolean): string {
-  if (byAccount) return `${t("engines:account.unconfigured")} ${t("engines:account.unofficial")}`;
-  if (isLocalApp(kind)) return t("engines:card.unconfiguredLocal");
-  return kind === "openai_compatible" ? t("engines:card.unconfiguredCompatible") : t("engines:card.unconfiguredKey");
-}
-
-/** A kind Sauri can link that the person has not set up: dashed and dimmed, with one way forward and
- * no delete, because there is nothing to delete yet. */
-export function UnconfiguredCard({ info, onConfigure, disabled }: UnconfiguredCardProps) {
+/** The last tile of the grid: the one way to link a provider, of any kind. Its hint says what can be added. */
+export function AddProviderCard({ onAdd, disabled }: { onAdd: () => void; disabled?: boolean }) {
   const { t } = useT();
-  const byAccount = info.auth === "account";
-  const titleId = `engines-kind-${info.kind}`;
-  const label = t(`engines:kinds.${info.kind}.label`);
+  const ids = useId();
   return (
-    <Card className="engines-card" dimmed dashed aria-labelledby={titleId}>
-      <div className="engines-card-head">
-        <ProviderLogo kind={info.kind} name={label} />
-        <div className="engines-card-names">
-          <h4 id={titleId} className="engines-card-title">{label}</h4>
-        </div>
-        <StatusBadge tone="neutral">{t("engines:statuses.unconfigured")}</StatusBadge>
-      </div>
-      <p className="engines-card-help">{unconfiguredHelp(info.kind, byAccount)}</p>
-      <div className="engines-card-actions">
-        <Button
-          variant="secondary"
-          size="sm"
-          aria-label={byAccount ? t("engines:account.connectLabel", { name: label }) : t("engines:card.configureLabel", { name: label })}
-          disabled={disabled}
-          onClick={onConfigure}
-        >
-          {byAccount ? t("engines:account.connect") : t("engines:card.configure")}
-        </Button>
-      </div>
-    </Card>
-  );
-}
-
-/** The last tile of the grid: the way to link a provider of any kind. */
-export function AddProviderCard({ onAdd }: { onAdd: () => void }) {
-  const { t } = useT();
-  return (
-    <button type="button" className="engines-add-card" onClick={onAdd}>
-      <Icon icon={Plus} />
-      {t("engines:add")}
+    <button
+      type="button"
+      className="engines-add-card"
+      disabled={disabled}
+      aria-labelledby={`${ids}-label`}
+      aria-describedby={`${ids}-hint`}
+      onClick={onAdd}
+    >
+      <span className="engines-add-card-label">
+        <Icon icon={Plus} />
+        <span id={`${ids}-label`}>{t("engines:add")}</span>
+      </span>
+      <span id={`${ids}-hint`} className="engines-add-card-hint">{t("engines:addHint")}</span>
     </button>
   );
 }
