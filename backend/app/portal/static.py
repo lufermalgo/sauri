@@ -42,6 +42,15 @@ def mount_portal(application: FastAPI) -> None:
         "Referrer-Policy": "no-referrer",
         "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), display-capture=()",
     }
+    def root_file(path: str) -> Path | None:
+        """A regular file directly in the build root other than index.html; never one that resolves outside it."""
+        if "\x00" in path:
+            return None
+        candidate = (root / path.lstrip("/")).resolve()
+        if candidate.parent != root or candidate == index or not candidate.is_file():
+            return None
+        return candidate
+
     application.mount("/assets", PortalAssets(root / "assets", headers), name="portal-assets")
 
     async def portal_fallback(request: Request, exc: Exception) -> Response:
@@ -52,7 +61,9 @@ def mount_portal(application: FastAPI) -> None:
         is_portal_route = not (path.startswith(("/api", "/assets")) or path == "/health")
         if exc.status_code == 404 and is_portal_route:
             if request.method in {"GET", "HEAD"}:
-                return FileResponse(index, headers={**headers, "Cache-Control": "no-cache"})
+                # Files at the build root (favicon.svg, favicon-32.png, apple-touch-icon.png) are served as they are.
+                served = root_file(request.scope["path"]) or index
+                return FileResponse(served, headers={**headers, "Cache-Control": "no-cache"})
             return JSONResponse({"detail": "Method Not Allowed"}, status_code=405, headers={"Allow": "GET, HEAD"})
         return await http_exception_handler(request, exc)
 

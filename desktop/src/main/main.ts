@@ -8,6 +8,7 @@ import { spawn } from "node:child_process";
 import { app, BrowserWindow, dialog, type IpcMainInvokeEvent, ipcMain, Menu, shell } from "electron";
 import { formatGigabytes, type Locale, type MessageKey, plural, t } from "../i18n.ts";
 import { PORTAL_CHANNELS, type RelocateResult, type ServicesStatus } from "../shared/portal-api.ts";
+import { aboutPanel } from "./about.ts";
 import { setLaunchAtLogin } from "./autostart.ts";
 import { type AppConfig, ConfigError, loadConfig, phaseADone, saveConfig } from "./config.ts";
 import { appPaths, FOLDER_KINDS, type FolderKind, folderProblems, PathError, socketPath, type UserFolders } from "./paths.ts";
@@ -619,13 +620,27 @@ async function uninstallFlow(): Promise<void> {
   app.exit(0);
 }
 
+/** «About Sauri» with what is running at the moment it opens. */
+function showAbout(): void {
+  app.setAboutPanelOptions(
+    aboutPanel(locale(), {
+      version: app.getVersion(),
+      year: new Date().getFullYear(),
+      portalUrl: portalUrl(),
+      summary: core?.summary() ?? [],
+      status: servicesStatus(),
+    }),
+  );
+  app.showAboutPanel();
+}
+
 function setAppMenu(): void {
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
       {
         label: app.name,
         submenu: [
-          { role: "about" },
+          { label: t(locale(), "menu.about"), click: showAbout },
           ...(updater?.menuItems() ?? []),
           { type: "separator" },
           { label: t(locale(), "menu.uninstall"), click: () => void uninstallFlow() },
@@ -683,6 +698,7 @@ app.whenReady().then(async () => {
   setAppMenu();
   tray = new SauriTray(locale(), {
     open: showMain,
+    portalUrl,
     openLogs,
     uninstall: () => void uninstallFlow(),
     quit: () => app.quit(),

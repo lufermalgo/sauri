@@ -37,6 +37,8 @@ function icon(state: TrayState): Electron.NativeImage {
 
 export interface TrayActions {
   open: () => void;
+  /** The portal address, shown as a line that does nothing when clicked. */
+  portalUrl: () => string;
   openLogs: () => void;
   uninstall: () => void;
   quit: () => void;
@@ -83,6 +85,7 @@ export class SauriTray {
     this.tray.setContextMenu(
       Menu.buildFromTemplate([
         { label: this.status.label, enabled: false },
+        { label: actions.portalUrl(), enabled: false },
         { type: "separator" },
         { label: t(locale, "tray.open"), click: actions.open },
         { label: t(locale, "tray.logs"), click: actions.openLogs },

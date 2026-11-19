@@ -156,3 +156,32 @@ def test_api_trailing_slash_redirect_is_not_shadowed_by_the_portal(
     assert redirected.headers["location"].endswith("/api/v1/items/")
     assert client.get("/api/v1/items").json() == []
     assert client.get("/api/v1/unknown").headers["content-type"].startswith("application/json")
+
+
+@pytest.mark.parametrize(
+    ("filename", "content_type"),
+    [("favicon.svg", "image/svg+xml"), ("favicon-32.png", "image/png"), ("apple-touch-icon.png", "image/png")],
+)
+def test_root_files_are_served_as_files(portal: Path, filename: str, content_type: str) -> None:
+    (portal / filename).write_bytes(b"icon " + filename.encode())
+    response = TestClient(create_app()).get(f"/{filename}")
+    assert response.status_code == 200
+    assert response.content == b"icon " + filename.encode()
+    assert response.headers["content-type"].startswith(content_type)
+    assert response.headers["cache-control"] == "no-cache"
+    assert_portal_headers(response.headers)
+
+
+@pytest.mark.parametrize("path", ["/%2e%2e/private.txt", "/..%2fprivate.txt", "/assets%2f..%2f..%2fprivate.txt"])
+def test_root_files_never_escape_the_build(portal: Path, path: str) -> None:
+    (portal.parent / "private.txt").write_text("private fixture")
+    response = TestClient(create_app()).get(path)
+    assert "private fixture" not in response.text
+
+
+def test_root_files_reject_symlinks_outside_the_build(portal: Path) -> None:
+    (portal.parent / "private.txt").write_text("private fixture")
+    (portal / "leak.txt").symlink_to(portal.parent / "private.txt")
+    response = TestClient(create_app()).get("/leak.txt")
+    assert "private fixture" not in response.text
+    assert response.text == INDEX
