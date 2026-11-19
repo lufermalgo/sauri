@@ -25,6 +25,11 @@ kept across retries) and moved to its final name only when all of them match; it
 bundle digest and the size and ``mtime_ns`` of each file. ``seed_bundle`` copies a verified bundle from a
 directory the operator names (never a request field), which is how a Mac that already has the files gets
 them without downloading.
+Custom models (``hf_custom``): a weights file from a public Hugging Face repository the user names. Its SHA-256
+and size come from the repository's LFS metadata at a pinned commit (read again by the host at install time,
+never taken from the request); it is then installed, verified and removed like a catalog model, under the id
+``custom-<first 16 hex of its SHA-256>``, into ``<models>/custom/``, and recorded in ``custom_models.json`` (user
+data next to the models, not the catalog). The download goes through the same policy, without any token.
 A managed engine (Senko) has no file: it is "installed" when its virtual environment holds the package
 (presence only, never hashed; ``scripts/engines/install-diar-engine.sh --check`` does the hash check).
 
@@ -63,7 +68,7 @@ import threading
 import uuid
 from collections import OrderedDict
 from collections.abc import Callable, Coroutine
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
@@ -73,6 +78,21 @@ import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
 from hardware import detect_hardware, disk_free_bytes
+from hf_custom import (
+    COMMIT,
+    CustomEntry,
+    CustomModelError,
+    HubClient,
+    Source,
+    check_path,
+    check_process,
+    check_repo,
+    compatible,
+    is_custom_id,
+    parse_source,
+    read_registry,
+    write_registry,
+)
 from sauri_engine_common.local_model_use import (
     LOCATION_LEGACY,
     LOCATION_MODELS_DIR,
@@ -378,6 +398,9 @@ class LocalModelService:
         self.token_path = token_path or default_token_path()
         self._jobs: OrderedDict[str, Job] = OrderedDict()
         self._active: Job | None = None
+        # Custom models resolved for an install that is not in the registry yet (written when the install ends).
+        self._pending_custom: dict[str, CustomEntry] = {}
+        self._registry_lock = threading.Lock()
 
     # --- catalog and paths -------------------------------------------------------------------------
 
@@ -402,6 +425,11 @@ class LocalModelService:
         return self._view
 
     def _model(self, model_id: str) -> CatalogModel:
+        if is_custom_id(model_id):
+            entry = self._custom_entry(model_id)
+            if entry is None:
+                raise LocalModelError(404, "unknown_model")
+            return entry.model()
         model = self.catalog.get(model_id)
         if model is None:
             raise LocalModelError(404, "unknown_model")
@@ -425,6 +453,110 @@ class LocalModelService:
         if not model.downloadable:
             raise LocalModelError(409, "managed_engine", managed_by=model.managed_by)
         return model
+
+    # --- custom models ----------------------------------------------------------------------------
+
+    def _custom_registry(self) -> list[CustomEntry]:
+        """The installed custom models; an unreadable registry refuses the request (it is never overwritten)."""
+        try:
+            return read_registry(self.models_dir)
+        except (OSError, UnicodeError, ValueError):
+            raise LocalModelError(503, "custom_registry_unreadable") from None
+
+    def _custom_listed(self) -> list[CustomEntry]:
+        """For the listing only: an unreadable registry shows no custom model instead of failing the whole list."""
+        try:
+            return self._custom_registry()
+        except LocalModelError:
+            logger.warning("custom_registry_unreadable")
+            return []
+
+    def _custom_entry(self, model_id: str) -> CustomEntry | None:
+        entry = next((item for item in self._custom_registry() if item.id == model_id), None)
+        return entry or self._pending_custom.get(model_id)
+
+    def _hub(self) -> HubClient:
+        return HubClient(self.policy.base_url, self.policy.allows)
+
+    async def resolve_custom(self, process: Any, source: Any) -> dict[str, Any]:
+        """Pin a repository to a commit and list the files ``process`` can use, with their LFS size and SHA-256."""
+        try:
+            checked = check_process(process)
+            resolved = await self._hub().resolve(checked, parse_source(source))
+        except CustomModelError as exc:
+            raise LocalModelError(exc.status, exc.code) from None
+        return resolved.as_dict()
+
+    async def install_custom(self, process: Any, repo: Any, revision: Any, file: Any) -> Job:
+        """Install one custom file; its size and SHA-256 are read again from Hugging Face, never from the request."""
+        try:
+            checked = check_process(process)
+            source = Source(check_repo(repo), revision if isinstance(revision, str) else "", check_path(file))
+            if COMMIT.fullmatch(source.revision or "") is None:
+                raise CustomModelError(422, "invalid_revision")
+            assert source.path is not None
+            if not compatible(checked, source.path):
+                raise CustomModelError(422, "no_compatible_files")
+            self._require_idle()
+            resolved = await self._hub().resolve(checked, source)
+        except CustomModelError as exc:
+            raise LocalModelError(exc.status, exc.code) from None
+        if resolved.revision != source.revision or len(resolved.files) != 1:
+            raise LocalModelError(409, "revision_changed")
+        item = resolved.files[0]
+        entry = CustomEntry(
+            checked, source.repo, resolved.revision, item.path, item.size, item.sha256, resolved.license
+        )
+        if self._custom_entry(entry.id) is None:
+            self._pending_custom[entry.id] = entry
+        return self.install(entry.id)
+
+    async def _install_custom(self, job: Job, model: CatalogModel, extra: list[CatalogModel]) -> None:
+        """Install the file like a catalog model, then record it in the registry (the file goes if that fails)."""
+        await self._install_with_companions(job, model, extra)
+        try:
+            with self._registry_lock:
+                entries = read_registry(self.models_dir)
+                entry = next((item for item in entries if item.id == model.id), None)
+                entry = entry or self._pending_custom[model.id]
+                others = [item for item in entries if item.id != model.id]
+                write_registry(self.models_dir, [*others, replace(entry, installed_at=_now())])
+        except (KeyError, OSError, UnicodeError, ValueError):
+            final, _part, manifest = self._paths(model)
+            _unlink(manifest)
+            _unlink(final)
+            raise JobError("custom_registry_unwritable") from None
+        self._pending_custom.pop(model.id, None)
+
+    def _custom_source(self, model: CatalogModel) -> tuple[str, DownloadPolicy]:
+        """The file inside its repository at the pinned commit; no token is ever sent for a custom model."""
+        try:
+            entry = self._custom_entry(model.id)
+        except LocalModelError:
+            raise JobError("custom_registry_unreadable") from None
+        if entry is None:
+            raise JobError("unknown_model")
+        return self.policy.url_for(model, entry.path), replace(self.policy, token_hosts=())
+
+    def _remove_custom(self, model_id: str) -> None:
+        """Delete the file of a custom model and its registry entry."""
+        if not any(item.id == model_id for item in self._custom_registry()):
+            raise LocalModelError(404, "unknown_model")
+        model = self._model(model_id)
+        if self._active is not None and self._active.model_id == model.id:
+            raise LocalModelError(409, "job_active", job_id=self._active.id)
+        processes = self.in_use_processes(model)
+        if processes:
+            raise LocalModelError(409, "model_in_use", processes=processes)
+        for path in self._paths(model):
+            _unlink(path)
+        with self._registry_lock:
+            try:
+                remaining = [item for item in read_registry(self.models_dir) if item.id != model_id]
+                write_registry(self.models_dir, remaining)
+            except (OSError, UnicodeError, ValueError):
+                raise LocalModelError(503, "custom_registry_unwritable") from None
+        logger.info("local_model_removed model=%s", model.id)
 
     # --- state ------------------------------------------------------------------------------------
 
@@ -657,13 +789,16 @@ class LocalModelService:
             return "present_unverified"
         return "available"
 
-    def _active_models(self, availability: dict[str, str]) -> dict[str, str | None]:
+    def _active_models(
+        self, availability: dict[str, str], custom: tuple[CatalogModel, ...] = ()
+    ) -> dict[str, str | None]:
         """The model serving each process: the chosen one, else the preferred or default one, only when ready.
 
         Mirrors the gateways: no choice means ``local:default``, which is the ``preferred`` model when it is
         installed and the engine it needs is present, and the catalog default otherwise; a choice means
         ``local:<id>``, which fails unless that model is ready, so no other model is shown as active.
-        An unreadable marker is treated as no choice, as ``local:default`` never reads it.
+        An unreadable marker is treated as no choice, as ``local:default`` never reads it. A custom model is only
+        ever active when it is the chosen one (it is never a default).
         """
         try:
             selection = self._read_selection()
@@ -671,7 +806,7 @@ class LocalModelService:
             selection = {}
         active: dict[str, str | None] = {}
         for process in dict.fromkeys(model.process for model in self.catalog.models):
-            candidates = [m for m in self.catalog.models if m.process == process and m.kind != "auxiliary"]
+            candidates = [m for m in (*self.catalog.models, *custom) if m.process == process and m.kind != "auxiliary"]
             chosen = selection.get(process)
             def ready(model: CatalogModel) -> bool:
                 return availability[model.id] == "installed" and self.needs_ready(model)
@@ -708,12 +843,14 @@ class LocalModelService:
         profile = self.hardware()
         recommendations = recommend(profile, self.catalog)
         recommended = {rec.model_id for rec in recommendations.values() if rec.model_id}
-        states = {model.id: self._state(model) for model in self.catalog.models}
+        custom_entries = {entry.id: entry for entry in self._custom_listed()}
+        custom = tuple(entry.model() for entry in custom_entries.values())
+        states = {model.id: self._state(model) for model in (*self.catalog.models, *custom)}
         availability = {model_id: self._availability(state) for model_id, state in states.items()}
-        active = self._active_models(availability)
+        active = self._active_models(availability, custom)
         verifying = self._active.pending if self._active is not None and self._active.type == "adopt" else set()
         models = []
-        for model in self.catalog.models:
+        for model in (*self.catalog.models, *custom):
             in_use_by = self._safe_in_use(model)
             state = states[model.id]
             view = {
@@ -746,6 +883,9 @@ class LocalModelService:
                 if availability[model.id] == "installed"
                 else self._install_hint(model, profile.disk_free_bytes),
             }
+            if model.id in custom_entries:
+                view["custom"] = True
+                view["origin"] = custom_entries[model.id].origin()
             models.append(view)
         return {
             "catalog_version": self.catalog.version,
@@ -803,7 +943,7 @@ class LocalModelService:
         ):
             raise LocalModelError(409, "already_installed")
         final, part, _manifest = self._paths(model)
-        target_dir = final.parent if model.kind == "component" else self.models_dir
+        target_dir = final.parent  # the models directory, its ``custom/`` folder or the components directory
         try:
             target_dir.mkdir(parents=True, exist_ok=True)
             part_info = None if model.bundle else _regular(part)
@@ -820,6 +960,8 @@ class LocalModelService:
         logger.info("local_model_install_started model=%s", model.id)
         if model.kind == "component":
             body = self._install_component(job, model)
+        elif is_custom_id(model.id):
+            body = self._install_custom(job, model, extra)
         else:
             body = self._install_with_companions(job, model, extra)
         return self._start(job, self._run(job, body, part))
@@ -863,6 +1005,9 @@ class LocalModelService:
         return job
 
     def remove(self, model_id: str) -> None:
+        if is_custom_id(model_id):
+            self._remove_custom(model_id)
+            return
         model = self._downloadable(model_id)
         if self._active is not None and self._active.model_id == model.id:
             raise LocalModelError(409, "job_active", job_id=self._active.id)
@@ -1004,8 +1149,9 @@ class LocalModelService:
     async def _install(self, job: Job, model: CatalogModel, base: int = 0) -> None:
         assert model.size is not None and model.sha256 is not None
         final, part, manifest = self._paths(model)
+        source = self._custom_source(model) if is_custom_id(model.id) else None
         async with self._client() as client:
-            await self._download_file(client, job, model, None, model.size, model.sha256, part, base)
+            await self._download_file(client, job, model, None, model.size, model.sha256, part, base, source=source)
         os.replace(part, final)
         self._write_manifest(model, final.stat(), manifest, "installed")
         job.result = "installed"
@@ -1490,6 +1636,43 @@ async def verify_route(model_id: str, request: Request) -> dict[str, Any] | Resp
     try:
         _no_query(request)
         return get_service().verify(model_id).as_dict()
+    except LocalModelError as exc:
+        return exc.response()
+
+
+MAX_BODY_BYTES: Final = 4096
+
+
+async def _json_body(request: Request, fields: frozenset[str]) -> dict[str, Any]:
+    """A small JSON object with exactly ``fields``; anything else is ``invalid_request``."""
+    _no_query(request)
+    raw = await request.body()
+    if len(raw) > MAX_BODY_BYTES:
+        raise LocalModelError(422, "invalid_request")
+    try:
+        body = json.loads(raw)
+    except ValueError:
+        raise LocalModelError(422, "invalid_request") from None
+    if not isinstance(body, dict) or set(body) != fields:
+        raise LocalModelError(422, "invalid_request")
+    return body
+
+
+@router.post("/local/custom/resolve", response_model=None)
+async def resolve_custom_route(request: Request) -> dict[str, Any] | Response:
+    try:
+        body = await _json_body(request, frozenset({"process", "source"}))
+        return await get_service().resolve_custom(body["process"], body["source"])
+    except LocalModelError as exc:
+        return exc.response()
+
+
+@router.post("/local/custom/install", status_code=202, response_model=None)
+async def install_custom_route(request: Request) -> dict[str, Any] | Response:
+    try:
+        body = await _json_body(request, frozenset({"process", "repo", "revision", "file"}))
+        job = await get_service().install_custom(body["process"], body["repo"], body["revision"], body["file"])
+        return job.as_dict()
     except LocalModelError as exc:
         return exc.response()
 
