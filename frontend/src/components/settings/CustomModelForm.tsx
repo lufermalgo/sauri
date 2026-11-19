@@ -4,6 +4,7 @@ import type { CustomInstallRequest, CustomModelProcess, CustomResolveResponse, L
 import { Button, TextField } from "../ui";
 import { resolveCustomModel } from "../../api";
 import { formatBytes } from "./engineLabels";
+import { licenseName } from "./licenseName";
 import { JobProgress } from "./LocalModelRow";
 import { errorCode, fileName, shortRevision } from "./localModelState";
 import { t, translateIfKnown, useT } from "../../i18n";
@@ -107,7 +108,7 @@ export function CustomModelForm({ process, job, cancelling, busy, onInstall, onC
           <h3 id={`${ids}-found`} className="settings-group-title">{t("engines:local.custom.foundTitle")}</h3>
           <p>{t("engines:local.custom.found", { repo: found.repo, revision: shortRevision(found.revision) })}</p>
           <p className="settings-help">
-            {found.license ? t("engines:local.custom.license", { license: found.license }) : t("engines:local.custom.noLicense")}
+            {found.license ? t("engines:local.custom.license", { license: licenseName(found.license) }) : t("engines:local.custom.noLicense")}
           </p>
           {found.files.length > 1 ? (
             <fieldset className="local-custom-files">

@@ -1,8 +1,16 @@
 // Portal window preload (sandboxed, bundled as CommonJS): the portal gets a few whitelisted calls and nothing
-// else; no Node, no ipcRenderer, no arbitrary channel. It listens only on the move's progress, the updater's state
-// and the services status, and each payload is checked before the portal sees it.
+// else; no Node, no ipcRenderer, no arbitrary channel. It listens only on the move's progress, the updater's state,
+// the services status and the window's full screen, and each payload is checked before the portal sees it.
 import { contextBridge, ipcRenderer } from "electron";
-import { PORTAL_CHANNELS, type PortalDesktopApi, relocateProgressOf, servicesStatusOf, updateStatusOf } from "./shared/portal-api.ts";
+import {
+  PORTAL_CHANNELS,
+  type PortalDesktopApi,
+  portalTitleBar,
+  relocateProgressOf,
+  servicesStatusOf,
+  updateStatusOf,
+  windowStateOf,
+} from "./shared/portal-api.ts";
 
 /** Listens on one main-process channel; the portal never sees the IPC event, only a checked copy of the payload. */
 function listen<T>(channel: string, check: (value: unknown) => T | null, listener: (value: T) => void): () => void {
@@ -17,6 +25,9 @@ function listen<T>(channel: string, check: (value: unknown) => T | null, listene
 }
 
 const api: PortalDesktopApi = {
+  titleBar: portalTitleBar(process.platform),
+  getWindowState: () => ipcRenderer.invoke(PORTAL_CHANNELS.windowState),
+  onWindowState: (listener) => listen(PORTAL_CHANNELS.windowChanged, windowStateOf, listener),
   getPaths: () => ipcRenderer.invoke(PORTAL_CHANNELS.getPaths),
   relocate: (kind) => ipcRenderer.invoke(PORTAL_CHANNELS.relocate, kind),
   onRelocateProgress: (listener) => listen(PORTAL_CHANNELS.relocateProgress, relocateProgressOf, listener),

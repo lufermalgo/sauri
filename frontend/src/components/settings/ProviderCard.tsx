@@ -90,7 +90,6 @@ export function ProviderCard({
 }: ProviderCardProps) {
   const { t } = useT();
   const titleId = `engines-card-${provider.id}`;
-  const switchLabelId = `${titleId}-switch`;
   const info = kinds.find((candidate) => candidate.kind === provider.kind);
   const kindLabel = t(`engines:kinds.${provider.kind}.label`);
   const dimmed = provider.status === "disabled";
@@ -149,13 +148,14 @@ export function ProviderCard({
             role="switch"
             className="settings-switch"
             aria-checked={provider.enabled}
-            aria-labelledby={`${switchLabelId} ${titleId}`}
+            aria-labelledby={titleId}
             disabled={busy}
             onClick={() => onToggle(!provider.enabled)}
           >
             <span className="settings-switch-thumb" aria-hidden="true" />
           </button>
-          <span id={switchLabelId}>{t("engines:card.active")}</span>
+          {/* The state the switch is in, in words (its name is the provider's; the state is aria-checked). */}
+          <span aria-hidden="true">{provider.enabled ? t("engines:card.on") : t("engines:card.off")}</span>
         </span>
         <span className="engines-card-icons">
           <IconAction icon={Pencil} label={t("engines:card.edit", { name: provider.label })} disabled={busy} onClick={onEdit} />

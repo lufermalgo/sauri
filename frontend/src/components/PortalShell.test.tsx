@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PortalShell } from "./PortalShell";
+import type { SauriDesktop, WindowState } from "../desktop-bridge";
 import { t } from "../i18n";
 
 const owner = { name: "Ana Maria Perez", email: "ana@example.test" };
@@ -369,5 +370,89 @@ describe("PortalShell app frame", () => {
   it("does not center the page in a max-width column", () => {
     expect(rule(".shell-main")).not.toMatch(/max-width|margin/);
     expect(shellCss).not.toContain("--ds-layout-max");
+  });
+});
+
+describe("PortalShell window bar (desktop app on a Mac)", () => {
+  const shellCss = readFileSync(join(__dirname, "../styles/shell.css"), "utf8");
+  const rule = (selector: string) =>
+    new RegExp(`(?:^|\\n)${selector.replace(/[.[\]"=(),-]/g, "\\$&")}\\s*\\{([^}]*)\\}`).exec(shellCss)?.[1] ?? "";
+  let pushWindow: (state: WindowState) => void = () => undefined;
+
+  function installBridge(titleBar: "inset" | "native", fullScreen = false) {
+    window.sauriDesktop = {
+      getPaths: vi.fn(),
+      relocate: vi.fn(),
+      markSetupDone: vi.fn(),
+      titleBar,
+      getWindowState: vi.fn(async () => ({ fullScreen })),
+      onWindowState: (listener: (state: WindowState) => void) => {
+        pushWindow = listener;
+        return () => undefined;
+      },
+      getServicesStatus: vi.fn(async () => ({ starting: true, problem: false })),
+      onServicesStatus: () => () => undefined,
+    } as unknown as SauriDesktop;
+  }
+
+  afterEach(() => {
+    delete window.sauriDesktop;
+  });
+
+  const bar = () => document.querySelector<HTMLElement>(".shell-titlebar");
+
+  it("changes nothing in a normal browser or in an app with the system's title bar", async () => {
+    renderShell();
+    await act(async () => undefined);
+    expect(bar()).toBeNull();
+    expect(root().hasAttribute("data-titlebar")).toBe(false);
+    cleanup();
+    installBridge("native");
+    renderShell();
+    await act(async () => undefined);
+    expect(bar()).toBeNull();
+    expect(sidebar().querySelector(".shell-sidebar-head")).not.toBeNull();
+    expect(document.querySelector(".shell-content .shell-notices")).not.toBeNull();
+  });
+
+  it("takes the traffic lights' row with the toggle, the brand and the notices, above the side panel", async () => {
+    installBridge("inset");
+    renderShell();
+    await act(async () => undefined);
+    expect(root().getAttribute("data-titlebar")).toBe("inset");
+    const header = bar()!;
+    expect(header.parentElement).toBe(root());
+    const toggle = within(header).getByRole("button", { name: t("shell:sidebar.toggle") });
+    expect(toggle.getAttribute("aria-controls")).toBe(sidebar().id);
+    expect(within(header).getByRole("link", { name: t("shell:brand") })).toHaveProperty("pathname", "/");
+    expect(within(header).getByRole("status").textContent).toContain(t("shell:desktop.starting"));
+    // The brand and the toggle moved up: the side panel starts with the navigation, the content with its view.
+    expect(sidebar().querySelector(".shell-sidebar-head")).toBeNull();
+    expect(document.querySelector(".shell-content .shell-notices")).toBeNull();
+    fireEvent.click(toggle);
+    expect(root().getAttribute("data-mode")).toBe("rail");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("gives the traffic lights' room back in native full screen and takes it again on leaving", async () => {
+    installBridge("inset", true);
+    renderShell();
+    await act(async () => undefined);
+    expect(root().getAttribute("data-titlebar")).toBe("full-screen");
+    act(() => pushWindow({ fullScreen: false }));
+    expect(root().getAttribute("data-titlebar")).toBe("inset");
+    act(() => pushWindow({ fullScreen: true }));
+    expect(root().getAttribute("data-titlebar")).toBe("full-screen");
+  });
+
+  it("moves the window from the bar, except from its controls, and leaves 78px for the lights", () => {
+    expect(rule(".shell-titlebar")).toMatch(/-webkit-app-region:\s*drag/);
+    expect(rule(".shell-titlebar")).toMatch(/background:\s*var\(--ds-nav-bg\)/);
+    expect(rule(".shell-titlebar")).toMatch(/color-scheme:\s*dark/);
+    expect(rule(".shell-titlebar")).toContain("calc(var(--shell-window-controls) / var(--shell-zoom, 1))");
+    expect(rule(".shell-titlebar :is(a, button, input, .shell-notice-badge, .shell-notice-message)")).toMatch(/-webkit-app-region:\s*no-drag/);
+    expect(rule(".shell-root[data-titlebar]")).toMatch(/--shell-titlebar-h:\s*40px/);
+    expect(rule(".shell-root[data-titlebar]")).toMatch(/--shell-window-controls:\s*78px/);
+    expect(rule('.shell-root[data-titlebar="full-screen"] .shell-titlebar')).toMatch(/padding-left:\s*var\(--ds-space-3\)/);
   });
 });

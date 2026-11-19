@@ -169,7 +169,7 @@ const writes = () => backend.calls.filter((call) => call.method !== "GET").map((
 const card = (name: string) => screen.getByRole("heading", { level: 4, name }).closest("section")!;
 const cardNames = () => screen.getAllByRole("heading", { level: 4 }).map((heading) => heading.textContent);
 const dialog = () => screen.getByRole("dialog");
-/** The state badge of a card (its «Activo» switch label reads the same). */
+/** The state badge of a card. */
 const badge = (name: string) => card(name).querySelector(".ui-status-badge")!;
 const openAdd = () => fireEvent.click(screen.getByRole("button", { name: t("engines:add") }));
 const addList = () => screen.getByRole("dialog", { name: t("engines:addDialog.title") });
@@ -275,7 +275,7 @@ describe("linked provider cards", () => {
     // A provider without a key is never asked for its models.
     expect(backend.calls.some((call) => call.path.startsWith("/providers/p2/models"))).toBe(false);
 
-    expect(within(card("Paused")).getByText(t("engines:statuses.disabled"))).toBeInTheDocument();
+    expect(badge("Paused")).toHaveTextContent(t("engines:statuses.disabled"));
     expect(card("Paused")).toHaveClass("ui-card--dimmed");
     expect(card("Paused")).not.toHaveClass("ui-card--dashed");
     expect(within(card("Local Ollama")).getByText(t("engines:card.keyNotNeeded"))).toBeInTheDocument();
@@ -284,7 +284,8 @@ describe("linked provider cards", () => {
   it("gives every card an on/off switch, edit and delete named after the provider", async () => {
     await renderReady([provider({ id: "p1", label: "Work OpenAI" })]);
     const scope = within(card("Work OpenAI"));
-    expect(scope.getByRole("switch", { name: `${t("engines:card.active")} Work OpenAI` })).toBeChecked();
+    expect(scope.getByRole("switch", { name: "Work OpenAI" })).toBeChecked();
+    expect(scope.getByText(t("engines:card.on"))).toBeInTheDocument();
     expect(scope.getByRole("button", { name: t("engines:card.edit", { name: "Work OpenAI" }) })).toBeInTheDocument();
     expect(scope.getByRole("button", { name: t("engines:card.remove", { name: "Work OpenAI" }) })).toBeInTheDocument();
     expect(scope.queryByText("Administrar")).toBeNull();
@@ -324,7 +325,7 @@ describe("turning a provider on and off", () => {
     fireEvent.click(within(card("Work OpenAI")).getByRole("switch"));
     await waitFor(() => expect(card("Work OpenAI")).toHaveClass("ui-card--dimmed"));
     expect(writes()).toEqual([{ method: "PATCH", path: "/providers/p1", body: { enabled: false } }]);
-    expect(within(card("Work OpenAI")).getByText(t("engines:statuses.disabled"))).toBeInTheDocument();
+    expect(badge("Work OpenAI")).toHaveTextContent(t("engines:statuses.disabled"));
     expect(screen.getByText(t("engines:turnOff.done", { name: "Work OpenAI" }))).toBeInTheDocument();
   });
 
@@ -349,8 +350,11 @@ describe("turning a provider on and off", () => {
     await renderReady([provider({ id: "p1", label: "Paused", status: "disabled", enabled: false })]);
     const toggle = within(card("Paused")).getByRole("switch");
     expect(toggle).not.toBeChecked();
+    // The words beside the switch follow its state, never «Activo» on a switch that is off.
+    expect(toggle.nextElementSibling).toHaveTextContent(t("engines:card.off"));
     fireEvent.click(toggle);
     expect(await screen.findByText(t("engines:turnOff.turnedOn", { name: "Paused" }))).toBeInTheDocument();
+    expect(within(card("Paused")).getByRole("switch").nextElementSibling).toHaveTextContent(t("engines:card.on"));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(writes()).toEqual([{ method: "PATCH", path: "/providers/p1", body: { enabled: true } }]);
     expect(badge("Paused")).toHaveTextContent(t("engines:statuses.active"));
@@ -426,10 +430,17 @@ describe("models catalog", () => {
       expect(backend.calls.some((call) => call.path === "/providers/p1/models" && call.search.includes("refresh=true"))).toBe(true));
   });
 
-  it("explains how to get a list when no provider is active", async () => {
+  it("asks to add a provider when there is none to turn on", async () => {
     await renderReady([]);
-    expect(screen.getByText(t("engines:catalog.empty"))).toBeInTheDocument();
+    expect(screen.getByText(t("engines:catalog.emptyNone"))).toBeInTheDocument();
+    expect(screen.queryByText(t("engines:catalog.empty"))).toBeNull();
     expect(screen.getByRole("button", { name: t("engines:catalog.refresh") })).toBeDisabled();
+  });
+
+  it("asks to turn one on when the linked providers are off", async () => {
+    await renderReady([provider({ id: "p1", label: "Paused", status: "disabled", enabled: false })]);
+    expect(screen.getByText(t("engines:catalog.empty"))).toBeInTheDocument();
+    expect(screen.queryByText(t("engines:catalog.emptyNone"))).toBeNull();
   });
 });
 
@@ -760,7 +771,7 @@ describe("editing a provider", () => {
 
     await waitFor(() => expect(within(dialog()).getByText(t("engines:dialog.revertedByEdit", { list: t("engines:processes.transcription") }))).toBeInTheDocument());
     expect(writes()[0]).toEqual({ method: "PATCH", path: "/providers/p1", body: { enabled: false } });
-    expect(within(card("Work OpenAI")).getByText(t("engines:statuses.disabled"))).toBeInTheDocument();
+    expect(badge("Work OpenAI")).toHaveTextContent(t("engines:statuses.disabled"));
   });
 });
 

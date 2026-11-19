@@ -3,6 +3,7 @@ import { LibraryWorkspace } from "./components/LibraryWorkspace";
 import { LoginScreen } from "./components/LoginScreen";
 import { UploadView } from "./components/UploadView";
 import { PortalShell } from "./components/PortalShell";
+import { WindowDragArea } from "./components/WindowDragArea";
 import { Button } from "./components/ui";
 import { SettingsView } from "./components/SettingsView";
 import { WelcomeView } from "./components/welcome/WelcomeView";
@@ -80,25 +81,36 @@ export function App() {
   }
 
   if (!sessionReady) {
-    return <main className="shell-login-stage" aria-busy={!sessionError}>
-      {sessionError ? <div role="alert">
-        <p>{t("shell:localSession.error")}</p>
-        <Button variant="secondary" onClick={() => setAttempt((value) => value + 1)}>{t("shell:localSession.retry")}</Button>
-      </div> : <p role="status">{t("shell:localSession.loading")}</p>}
-    </main>;
+    return <>
+      <WindowDragArea />
+      <main className="shell-login-stage" aria-busy={!sessionError}>
+        {sessionError ? <div role="alert">
+          <p>{t("shell:localSession.error")}</p>
+          <Button variant="secondary" onClick={() => setAttempt((value) => value + 1)}>{t("shell:localSession.retry")}</Button>
+        </div> : <p role="status">{t("shell:localSession.loading")}</p>}
+      </main>
+    </>;
   }
 
   if (!authenticated) {
     return (
-      <main className="shell-login-stage">
-        <LoginScreen onLogin={() => setAuthenticated(true)} />
-      </main>
+      <>
+        <WindowDragArea />
+        <main className="shell-login-stage">
+          <LoginScreen onLogin={() => setAuthenticated(true)} />
+        </main>
+      </>
     );
   }
 
   // First-run phase B is a page of its own, without the portal's navigation.
   if (route.name === "welcome") {
-    return <WelcomeView onFinished={() => navigate({ name: "library" }, { replace: true })} />;
+    return (
+      <>
+        <WindowDragArea />
+        <WelcomeView onFinished={() => navigate({ name: "library" }, { replace: true })} />
+      </>
+    );
   }
 
   return (

@@ -14,6 +14,8 @@ function matches(model: EngineModel, query: string): boolean {
 interface ModelsCatalogProps {
   /** Active providers that can serve a process: the only ones asked for their models. */
   providers: EngineProvider[];
+  /** Some linked provider is off or still needs its key: with no list, the hint asks to turn one on, not to add one. */
+  canTurnOn: boolean;
   entries: Record<string, CatalogEntry>;
   refreshing: boolean;
   onRefresh: () => void;
@@ -21,7 +23,7 @@ interface ModelsCatalogProps {
 
 /** What each active provider offers, as the provider itself listed it: one collapsible row per provider
  * with how many models, when they were asked for and whether it answered; a search across all of them. */
-export function ModelsCatalog({ providers, entries, refreshing, onRefresh }: ModelsCatalogProps) {
+export function ModelsCatalog({ providers, canTurnOn, entries, refreshing, onRefresh }: ModelsCatalogProps) {
   const { t } = useT();
   const ids = useId();
   const [query, setQuery] = useState("");
@@ -70,7 +72,7 @@ export function ModelsCatalog({ providers, entries, refreshing, onRefresh }: Mod
         </Button>
       </div>
 
-      {providers.length === 0 && <p className="settings-help">{t("engines:catalog.empty")}</p>}
+      {providers.length === 0 && <p className="settings-help">{t(canTurnOn ? "engines:catalog.empty" : "engines:catalog.emptyNone")}</p>}
       {providers.length > 0 && visible.length === 0 && <p role="status" className="settings-help">{t("engines:catalog.noMatches")}</p>}
       {visible.length > 0 && (
         <ul className="engines-catalog" aria-label={t("engines:catalog.listLabel")}>

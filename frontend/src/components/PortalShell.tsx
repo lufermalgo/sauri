@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef } from "react";
-import type { MouseEvent, ReactNode } from "react";
+import type { CSSProperties, MouseEvent, ReactNode } from "react";
 import { Library, PanelLeft } from "lucide-react";
 import { navigate, routePath, type Route } from "../router";
 import type { SessionUser } from "../session-user";
@@ -8,6 +8,7 @@ import { DesktopNotices } from "./DesktopNotices";
 import { ProfileCard } from "./ProfileCard";
 import { useSidebar } from "./useSidebar";
 import { useMediaQuery } from "./useMediaQuery";
+import { useWindowChrome } from "./useWindowChrome";
 import { WORKSPACE_WIDE_QUERY } from "./useLibraryPane";
 import {
   LIBRARY_PANE_ID,
@@ -48,6 +49,11 @@ export function PortalShell({ route, user = null, onLogout, children }: PortalSh
   const closerRef = useRef<HTMLButtonElement>(null);
   const wasOpen = useRef(false);
   const drawer = mode === "drawer";
+  // In the desktop app on a Mac the window has no title bar: the portal's own top bar takes that row, beside the
+  // traffic lights, with the brand, the sidebar toggle and the app's notices (DESIGN.md 6, «Barra de la ventana»).
+  const chrome = useWindowChrome();
+  const titleBar = chrome.inset && !drawer;
+  const toggleTip = useTooltip(titleBar ? t("shell:sidebar.toggle") : undefined);
   // A sidebar item whose section has a secondary pane shows or hides it, but only while that pane
   // exists beside the content: the library list on the library routes of a wide screen, the settings
   // categories on any screen wide enough for two panes. Everywhere else the item is a plain link.
@@ -117,7 +123,35 @@ export function PortalShell({ route, user = null, onLogout, children }: PortalSh
   const libraryTarget: Route = lastMeetingId ? { name: "meeting", meetingId: lastMeetingId } : LIBRARY_ROUTE;
 
   return (
-    <div className="shell-root" data-mode={mode}>
+    <div
+      className="shell-root"
+      data-mode={mode}
+      data-titlebar={titleBar ? (chrome.fullScreen ? "full-screen" : "inset") : undefined}
+      style={titleBar ? ({ "--shell-zoom": chrome.zoom } as CSSProperties) : undefined}
+    >
+      {titleBar && (
+        <header className="shell-titlebar">
+          <span className="shell-titlebar-tool">
+            <button
+              type="button"
+              className="shell-icon-button"
+              aria-label={t("shell:sidebar.toggle")}
+              aria-expanded={mode === "full"}
+              aria-controls={sidebarId}
+              {...toggleTip.triggerProps}
+              onClick={() => { toggleTip.hide(); toggleCollapsed(); }}
+            >
+              <Icon icon={PanelLeft} />
+            </button>
+            {toggleTip.tooltip}
+          </span>
+          <a className="shell-brand" href={routePath(LIBRARY_ROUTE)} aria-label={t("shell:brand")} onClick={(event) => go(event, LIBRARY_ROUTE)}>
+            <BrandMark className="shell-brand-mark" size={BRAND_MARK_SIZE} />
+            <BrandWordmark className="shell-brand-name" height={BRAND_WORDMARK_HEIGHT} />
+          </a>
+          <DesktopNotices />
+        </header>
+      )}
       {drawer && (
         <header className="shell-topbar">
           <button
@@ -145,7 +179,7 @@ export function PortalShell({ route, user = null, onLogout, children }: PortalSh
         aria-label={t("shell:sidebar.region")}
         data-open={drawer ? drawerOpen : undefined}
       >
-        <div className="shell-sidebar-head">
+        {!titleBar && <div className="shell-sidebar-head">
           <a className="shell-brand" href={routePath(LIBRARY_ROUTE)} aria-label={t("shell:brand")} onClick={(event) => go(event, LIBRARY_ROUTE)}>
             <BrandMark className="shell-brand-mark" size={BRAND_MARK_SIZE} />
             <BrandWordmark className="shell-brand-name shell-collapsible" height={BRAND_WORDMARK_HEIGHT} />
@@ -175,7 +209,7 @@ export function PortalShell({ route, user = null, onLogout, children }: PortalSh
               <span className="shell-tip-only" aria-hidden="true">{t("shell:sidebar.toggle")}</span>
             </button>
           )}
-        </div>
+        </div>}
         <nav className="shell-nav" aria-label={t("shell:navLabel")}>
           {libraryPane ? (
             <span className="shell-link-wrap">
@@ -213,7 +247,7 @@ export function PortalShell({ route, user = null, onLogout, children }: PortalSh
         <ProfileCard user={user} route={route} settingsPane={settingsPane} onNavigate={go} onLogout={onLogout} />
       </aside>
       <div className="shell-content">
-        <DesktopNotices />
+        {!titleBar && <DesktopNotices />}
         <main className="shell-main">{children}</main>
       </div>
     </div>
