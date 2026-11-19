@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { Blob as NativeBlob } from "node:buffer";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { sauriHealth } from "./test-backend";
 import { IDBFactory, IDBKeyRange } from "fake-indexeddb";
 import { cancelCountdown, hideRecordingUI, showCountdown, syncRecordingUI } from "./overlay/recording";
 import { COMPLETION_STORE, getCompletion, getChunksBySession, openDB } from "./recording-db";
@@ -109,7 +110,7 @@ async function setup({ url = "https://meet.google.com/test-picker", existing = f
   // Only ingestion uploads count; the later processing-status reads are answered with a failure.
   vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
     if (!appAvailable) return Promise.reject(new TypeError("Desktop app closed"));
-    if (String(url).endsWith("/health")) return Promise.resolve(new Response("{}"));
+    if (String(url).endsWith("/health")) return Promise.resolve(sauriHealth());
     return String(url).endsWith("/ingestion/upload") ? upload(url, init) : Promise.resolve(new Response("", { status: 503 }));
   });
   vi.stubGlobal("chrome", {
@@ -272,7 +273,7 @@ describe("#994: native picker to durable upload", () => {
     expect((payload.get("audio") as Blob).size).toBe(media.size);
     expect(JSON.parse(payload.get("data") as string)).toMatchObject({ meeting_id: completion!.meetingId, idempotency_key: result.sessionId, video_presence: "muxed" });
     expect(await getCompletion(result.sessionId)).toMatchObject({ recordingId: "server-picker", reviewStatus: "review_opened", trigger: "captured_tab_closed" });
-    expect(chrome.tabs.create).toHaveBeenCalledWith({ url: `http://localhost:8000/?meetingId=${completion!.meetingId}` });
+    expect(chrome.tabs.create).toHaveBeenCalledWith({ url: `http://localhost:41750/?meetingId=${completion!.meetingId}` });
     await h.close();
     await h.stop();
     h.video.dispatchEvent(new Event("ended"));

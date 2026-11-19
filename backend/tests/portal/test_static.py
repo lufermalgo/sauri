@@ -81,10 +81,11 @@ def test_unknown_api_paths_stay_json_404(portal: Path, path: str) -> None:
     assert "cache-control" not in response.headers
 
 
-def test_health_unaffected(portal: Path) -> None:
+def test_health_unaffected(portal: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("SAURI_APP_VERSION", raising=False)
     response = TestClient(create_app()).get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert response.json() == {"status": "ok", "service": "sauri", "version": "0.1.0"}
     assert "cache-control" not in response.headers
     assert response.headers["content-security-policy"] == "default-src 'none'; frame-ancestors 'none'"
 
@@ -118,7 +119,13 @@ def test_portal_is_opt_in(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, setti
     client = TestClient(create_app())
     assert client.get("/").status_code == 404
     assert client.get("/assets/x.js").status_code == 404
-    assert client.get("/health").json() == {"status": "ok"}
+    assert client.get("/health").json()["status"] == "ok"
+
+
+def test_health_reports_the_desktop_app_version(portal: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SAURI_APP_VERSION", "0.2.0")
+    # Only the signature, the state and the version: no data and no credential.
+    assert TestClient(create_app()).get("/health").json() == {"status": "ok", "service": "sauri", "version": "0.2.0"}
 
 
 def test_invalid_build_refuses_to_start(portal: Path) -> None:

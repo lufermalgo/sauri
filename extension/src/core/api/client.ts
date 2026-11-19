@@ -1,7 +1,6 @@
 // Shared API client (Side Panel + Detail View) — Req. 13.1, 13.3,
 // 13.4, 13.5, 14.1, 14.4, 14.5
 import type { NoteDTO, TranscriptDTO, DiarizationDTO } from "../types";
-import { BACKEND_URL } from "../backend";
 import { authorizedRequest } from "./authorized-fetch";
 import { InsecureTransportError, validateTransport } from "./transport";
 
@@ -17,9 +16,8 @@ export class NotFoundError extends Error {
   }
 }
 
-async function request<T>(backendUrl: string, path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return authorizedRequest(
-    backendUrl,
     path,
     init ?? {},
     async (response) => {
@@ -36,7 +34,7 @@ async function request<T>(backendUrl: string, path: string, init?: RequestInit):
 }
 
 /** GET /api/v1/meetings/ — Note history (Req. 4.1) */
-export async function listMeetings(backendUrl: string = BACKEND_URL): Promise<NoteDTO[]> {
+export async function listMeetings(): Promise<NoteDTO[]> {
   const raw = await request<
     Array<{
       meeting_id: string;
@@ -44,7 +42,7 @@ export async function listMeetings(backendUrl: string = BACKEND_URL): Promise<No
       process_state: string;
       created_at: string | null;
     }>
-  >(backendUrl, "/api/v1/meetings/");
+  >("/api/v1/meetings/");
 
   return raw.map((r) => ({
     meetingId: r.meeting_id,
@@ -56,11 +54,9 @@ export async function listMeetings(backendUrl: string = BACKEND_URL): Promise<No
 
 /** GET /api/v1/meetings/{id} — processing state (Detail View → polling while transcribing) */
 export async function getMeeting(
-  meetingId: string,
-  backendUrl: string = BACKEND_URL
+  meetingId: string
 ): Promise<{ meetingId: string; processState: string }> {
   const raw = await request<{ meeting_id: string; process_state: string }>(
-    backendUrl,
     `/api/v1/meetings/${meetingId}`
   );
   return { meetingId: raw.meeting_id, processState: raw.process_state };
@@ -68,14 +64,13 @@ export async function getMeeting(
 
 /** GET /api/v1/meetings/{id}/transcript (Req. 6.3) */
 export async function getTranscript(
-  meetingId: string,
-  backendUrl: string = BACKEND_URL
+  meetingId: string
 ): Promise<TranscriptDTO> {
   const raw = await request<{
     transcript_id: string;
     meeting_id: string;
     segments: Array<{ id: string; text: string; start_ms: number; end_ms: number; sequence: number }>;
-  }>(backendUrl, `/api/v1/meetings/${meetingId}/transcript`);
+  }>(`/api/v1/meetings/${meetingId}/transcript`);
 
   return {
     transcriptId: raw.transcript_id,
@@ -92,8 +87,7 @@ export async function getTranscript(
 
 /** GET /api/v1/meetings/{id}/diarization (Req. 6.3) */
 export async function getDiarization(
-  meetingId: string,
-  backendUrl: string = BACKEND_URL
+  meetingId: string
 ): Promise<DiarizationDTO> {
   const raw = await request<{
     diarization_id: string;
@@ -102,7 +96,7 @@ export async function getDiarization(
     speaker_count: number;
     speakers: Array<{ id: string; label: string; sequence: number }>;
     assignments: Array<{ turn_id: string; speaker_id: string }>;
-  }>(backendUrl, `/api/v1/meetings/${meetingId}/diarization`);
+  }>(`/api/v1/meetings/${meetingId}/diarization`);
 
   return {
     diarizationId: raw.diarization_id,
@@ -120,11 +114,9 @@ export async function getDiarization(
 /** PATCH /api/v1/meetings/{id} — renames a note (My Notes → rename) */
 export async function renameMeeting(
   meetingId: string,
-  newTitle: string,
-  backendUrl: string = BACKEND_URL
+  newTitle: string
 ): Promise<void> {
   await request<{ meeting_id: string; title: string }>(
-    backendUrl,
     `/api/v1/meetings/${meetingId}`,
     {
       method: "PATCH",
@@ -136,13 +128,11 @@ export async function renameMeeting(
 
 /** DELETE /api/v1/meetings/{id} — deletes a note (My Notes → delete) */
 export async function deleteMeeting(
-  meetingId: string,
-  backendUrl: string = BACKEND_URL
+  meetingId: string
 ): Promise<void> {
   // 204 response with no body — doesn't reuse request<T>() because that
   // function always tries to parse the response as JSON.
   await authorizedRequest(
-    backendUrl,
     `/api/v1/meetings/${meetingId}`,
     { method: "DELETE" },
     async (response) => {

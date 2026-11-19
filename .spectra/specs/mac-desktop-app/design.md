@@ -14,6 +14,8 @@ Hechos verificados el 2026-11-18 que sostienen el diseño (informes de lectura d
 - **Portal.** nginx sirve el portal y hace de proxy de `/api` con CSP por hash (`frontend/nginx.conf`, `frontend/security-headers.conf:15-20`). La extensión fija `http://localhost:8000` en cuatro sitios (`extension/src/background.ts:125`, `core/api/client.ts:9`, `SidePanelApp.tsx`, `DetailApp.tsx`).
 - **Repositorio.** `lufermalgo/sauri` es privado (`gh repo view`: PRIVATE). APX publica sus versiones en un repositorio público (`packages/protocol/src/releases.ts:8`).
 
+**Cambio del 2026-11-19 (decisión del dueño): puertos de la app.** La app instalada deja el bloque 8000–8005 y usa 41750–41755, todo derivado del puerto de la API: API y portal 41750, motores +1 a +3, `llama-server` +4 (`SAURI_LLAMA_PORT`) y `host-engine` +5 (`desktop/src/main/ports.ts`). El bloque queda por debajo del rango efímero de macOS (49152–65535). El entorno Docker de desarrollo sigue en 8000–8005. `/health` responde `{"status":"ok","service":"sauri","version":…}`. La extensión prueba 41750 y luego 8000 contra esa firma (en 8000 también acepta el `{"status":"ok"}` exacto de las apps anteriores), guarda el resultado en `chrome.storage.session` y lo olvida si la app deja de responder (`extension/src/core/backend.ts`). Donde este documento dice 8000 para la app instalada, rige el bloque nuevo.
+
 ## Decisiones de Diseño Clave
 
 **D1. Electron con `electron-builder`, solo `mac`/`arm64`, sin firma (`identity: "-"`)**, en una carpeta nueva `desktop/` del monorepo (workspace de npm).

@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { NotesList } from "./NotesList";
 import { panelCopy as copy } from "../../i18n/spanish";
 import type { NoteDTO } from "../../core/types";
@@ -9,18 +9,24 @@ const notes: NoteDTO[] = [
   { meetingId: "r3", title: "Test B", processState: "failed", createdAt: null },
 ];
 
+beforeEach(() => {
+  // The app was found on the desktop port earlier in this browser session.
+  vi.stubGlobal("chrome", { storage: { session: { get: vi.fn(async () => ({ sauriBackendUrl: "http://localhost:41750" })) } } });
+});
+afterEach(() => { vi.unstubAllGlobals(); });
+
 describe("NotesList approved library", () => {
   it.each([ ["loading", copy.loading], ["empty", copy.empty], ["error", copy.listError] ] as const)("renders %s", (state, text) => {
     render(<NotesList state={state} notes={[]} onRetry={vi.fn()} onOpenNote={vi.fn()} />);
     expect(screen.getByText(text)).toBeInTheDocument();
   });
-  it("renders sorted recordings, localized fallback and truthful states without invented progress", () => {
+  it("renders sorted recordings, localized fallback and truthful states without invented progress", async () => {
     render(<NotesList state="withData" notes={notes} onRetry={vi.fn()} onOpenNote={vi.fn()} />);
     expect(screen.getAllByRole("listitem")).toHaveLength(3);
     expect(screen.getByText(copy.untitled)).toBeInTheDocument();
     for (const label of [copy.ready, copy.transcribing, copy.failed]) expect(screen.getByText(label)).toBeInTheDocument();
     expect(screen.queryByText(/%/)).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: copy.portal })).toHaveAttribute("href", "http://localhost:8000/");
+    expect(await screen.findByRole("link", { name: copy.portal })).toHaveAttribute("href", "http://localhost:41750/");
   });
   it("filters the loaded list from an inline search and restores it when closed", () => {
     render(<NotesList state="withData" notes={notes} onRetry={vi.fn()} onOpenNote={vi.fn()} />);
@@ -42,14 +48,23 @@ describe("NotesList approved library", () => {
     expect(screen.getAllByRole("listitem")).toHaveLength(3);
     expect(toggle).toHaveFocus();
   });
-  it("matches the fallback title and offers search only when there is a list", () => {
+  it("matches the fallback title and offers search only when there is a list", async () => {
     const view = render(<NotesList state="withData" notes={notes} onRetry={vi.fn()} onOpenNote={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: copy.search }));
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: copy.untitled.toLowerCase() } });
     expect(screen.getAllByRole("listitem")).toHaveLength(1);
     view.rerender(<NotesList state="empty" notes={[]} onRetry={vi.fn()} onOpenNote={vi.fn()} />);
     expect(screen.queryByRole("button", { name: copy.search })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: copy.portal })).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: copy.portal })).toBeInTheDocument();
+  });
+  it("hides the portal link while no Sauri app answers", async () => {
+    vi.resetModules();
+    vi.stubGlobal("chrome", { storage: { session: { get: vi.fn(async () => ({})), set: vi.fn(), remove: vi.fn() } } });
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("connection refused"); }));
+    const { NotesList: Fresh } = await import("./NotesList");
+    render(<Fresh state="empty" notes={[]} onRetry={vi.fn()} onOpenNote={vi.fn()} />);
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole("link", { name: copy.portal })).not.toBeInTheDocument();
   });
   it("opens the selected recording and retries a failed list request", () => {
     const onOpenNote = vi.fn(), onRetry = vi.fn();

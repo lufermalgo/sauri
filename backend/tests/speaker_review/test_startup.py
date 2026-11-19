@@ -27,7 +27,7 @@ async def test_api_lifespan_without_clip_keys(factory: word_tests.Factory, monke
     async with main.app.router.lifespan_context(main.app):
         async with AsyncClient(transport=ASGITransport(app=main.app), base_url="http://test") as client:
             response = await client.get("/health")
-            assert response.status_code == 200 and response.json() == {"status": "ok"}
+            assert response.status_code == 200 and response.json()["status"] == "ok"
         await asyncio.sleep(0)
     queue.connect.assert_awaited()
     queue.disconnect.assert_awaited()

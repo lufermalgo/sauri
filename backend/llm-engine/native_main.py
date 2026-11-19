@@ -57,6 +57,17 @@ ERROR_STATUS: Final = {
     "secret_unavailable": 503,
 }
 DEFAULT_ERROR_STATUS: Final = 502
+DEFAULT_LLAMA_PORT: Final = 8004
+
+
+def llama_port() -> int:
+    """llama-server's loopback port: ``SAURI_LLAMA_PORT`` (the desktop app's block) or the development 8004."""
+    raw = os.getenv("SAURI_LLAMA_PORT", "").strip()
+    if not raw:
+        return DEFAULT_LLAMA_PORT
+    if not raw.isdigit() or not 1024 <= int(raw) <= 65535:
+        raise ValueError("SAURI_LLAMA_PORT must be a port number between 1024 and 65535")
+    return int(raw)
 
 
 def require_engine_token(credentials: HTTPAuthorizationCredentials | None = _bearer_dependency) -> None:
@@ -76,7 +87,8 @@ class LlamaServer:
     def __init__(self) -> None:
         self.binary = Path(os.getenv("SAURI_LLAMA_SERVER", INSTALL_DIR / "bin/llama-server"))
         self.model = Path(os.getenv("SAURI_LLM_MODEL_FILE", INSTALL_DIR / "models/Qwen3.5-9B-Q4_K_M.gguf"))
-        self.url = "http://127.0.0.1:8004"
+        # The desktop app derives this port from its block; 8004 is the development stack's.
+        self.url = f"http://127.0.0.1:{llama_port()}"
         self.idle_seconds = 120.0
         self.startup_seconds = 120.0
         self.request_seconds = float(os.getenv("SUMMARIZATION_TIMEOUT_SECONDS", "1500"))
@@ -116,7 +128,7 @@ class LlamaServer:
         if self.process is not None and self.process.returncode is None and self.loaded_model == model:
             return
         await self.stop()
-        port = httpx.URL(self.url).port or 8004
+        port = httpx.URL(self.url).port or DEFAULT_LLAMA_PORT
         # Fail before spawning or probing HTTP: an occupied port may belong to an
         # unrelated service that also returns 200 from /health.
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:

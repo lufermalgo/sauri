@@ -154,14 +154,15 @@ describe("RecordingCompletionStatus — acknowledgement on reopen", () => {
 describe("RecordingCompletionStatus — no technical ids, portal link, failure cause", () => {
   it("opens the recording in the portal when it was uploaded and renders no ids", async () => {
     const create = vi.fn().mockResolvedValue({ id: 9 });
-    vi.stubGlobal("chrome", { tabs: { create } });
+    // The app was found on the desktop port earlier in this browser session.
+    vi.stubGlobal("chrome", { tabs: { create }, storage: { session: { get: vi.fn(async () => ({ sauriBackendUrl: "http://localhost:41750" })) } } });
     await db.createCompletion(record("processing_failed", { updatedAt: Date.now() }));
     render(<RecordingCompletionStatus sessionId="session-current" />);
     const region = await screen.findByRole("alert");
     expect(region).not.toHaveTextContent("session-current");
     expect(region).not.toHaveTextContent("meeting-current");
     await act(async () => { screen.getByRole("button", { name: copy.openPortal }).click(); });
-    expect(create).toHaveBeenCalledWith({ url: expect.stringContaining("meetingId=meeting-current") });
+    await waitFor(() => expect(create).toHaveBeenCalledWith({ url: "http://localhost:41750/?meetingId=meeting-current" }));
   });
 
   it("offers no portal link before the upload was accepted", async () => {

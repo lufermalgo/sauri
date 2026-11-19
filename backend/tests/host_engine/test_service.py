@@ -318,6 +318,20 @@ def fake_gateways() -> Iterator[dict[str, int]]:
         server.server_close()
 
 
+@pytest.mark.parametrize(("setting", "first"), [(None, 8000), ("41750", 41750)])
+def test_engine_ports_follow_the_api_port(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, setting: str | None, first: int
+) -> None:
+    from conftest import load_host_module
+
+    if setting is None:
+        monkeypatch.delenv("SAURI_API_PORT", raising=False)
+    else:
+        monkeypatch.setenv("SAURI_API_PORT", setting)
+    module = load_host_module(tmp_path / "token", tmp_path / "secrets")
+    assert (("asr", first + 1), ("diar", first + 2), ("llm", first + 3), ("host", first + 5)) == module.ENGINES
+
+
 def test_engine_status_reports_each_process(
     client: TestClient, host: ModuleType, fake_gateways: dict[str, int]
 ) -> None:

@@ -1,6 +1,6 @@
 import net from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
-import { busyPorts, isPortFree, LLAMA_PORT, portPlan, portsToCheck } from "./ports.ts";
+import { busyPorts, DEFAULT_API_PORT, isPortFree, portPlan, portsToCheck } from "./ports.ts";
 
 const servers: net.Server[] = [];
 
@@ -17,15 +17,17 @@ afterEach(async () => {
 });
 
 describe("ports", () => {
-  it("plans 8000–8005 by default", () => {
-    expect(portPlan()).toEqual({ api: 8000, asr: 8001, diar: 8002, llm: 8003, llama: 8004, host: 8005 });
-    expect(portsToCheck(portPlan())).toEqual([8000, 8001, 8002, 8003, 8004, 8005]);
+  it("plans the uncommon 41750–41755 block by default, below macOS's ephemeral range", () => {
+    expect(DEFAULT_API_PORT).toBe(41750);
+    expect(portPlan()).toEqual({ api: 41750, asr: 41751, diar: 41752, llm: 41753, llama: 41754, host: 41755 });
+    expect(portsToCheck(portPlan())).toEqual([41750, 41751, 41752, 41753, 41754, 41755]);
+    expect(Math.max(...portsToCheck(portPlan()))).toBeLessThan(49152);
   });
 
-  it("moves the block for development without claiming the fixed llama-server port", () => {
+  it("derives every port, llama-server included, from the API port", () => {
     const plan = portPlan(18100);
-    expect(plan).toEqual({ api: 18100, asr: 18101, diar: 18102, llm: 18103, llama: LLAMA_PORT, host: 18105 });
-    expect(portsToCheck(plan)).toEqual([18100, 18101, 18102, 18103, 18105]);
+    expect(plan).toEqual({ api: 18100, asr: 18101, diar: 18102, llm: 18103, llama: 18104, host: 18105 });
+    expect(portsToCheck(plan)).toEqual([18100, 18101, 18102, 18103, 18104, 18105]);
   });
 
   it.each([0, 80, 65535, 8000.5, Number.NaN])("rejects API port %s", (port) => {

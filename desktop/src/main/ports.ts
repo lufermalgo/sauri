@@ -1,9 +1,12 @@
-// Fixed loopback ports (Requirement 3.6) and the check that none is taken before anything starts (3.7).
+// Loopback ports (Requirement 3.6) and the check that none is taken before anything starts (3.7).
 import net from "node:net";
 
-export const DEFAULT_API_PORT = 8000;
-/** llama-server's port is fixed inside the LLM engine (`llm-engine/native_main.py`). */
-export const LLAMA_PORT = 8004;
+/**
+ * Base of the installed app's block (41750–41755): uncommon, so it does not collide with the usual development
+ * ports (8000 belongs to the Docker stack), and below macOS's ephemeral range (49152–65535), so the system never
+ * hands one of these ports to an outgoing connection.
+ */
+export const DEFAULT_API_PORT = 41750;
 
 export interface PortPlan {
   api: number;
@@ -14,20 +17,15 @@ export interface PortPlan {
   host: number;
 }
 
-/** API on `apiPort` and the engines right after it: 8000–8005 by default. */
+/** Every port derives from the API's: the engines, llama-server and the host service follow it (+1 to +5). */
 export function portPlan(apiPort = DEFAULT_API_PORT): PortPlan {
   if (!Number.isInteger(apiPort) || apiPort < 1024 || apiPort > 65530) throw new RangeError("invalid_api_port");
-  return { api: apiPort, asr: apiPort + 1, diar: apiPort + 2, llm: apiPort + 3, llama: LLAMA_PORT, host: apiPort + 5 };
+  return { api: apiPort, asr: apiPort + 1, diar: apiPort + 2, llm: apiPort + 3, llama: apiPort + 4, host: apiPort + 5 };
 }
 
-/**
- * Ports Sauri must own before starting. llama-server only joins when it sits inside the plan's range: on a
- * development plan (another API port) port 8004 belongs to the owner's own engines and is not ours to claim.
- */
+/** Ports Sauri must own before starting: the whole block. */
 export function portsToCheck(plan: PortPlan): number[] {
-  const ports = [plan.api, plan.asr, plan.diar, plan.llm, plan.host];
-  if (plan.llama > plan.api && plan.llama < plan.host) ports.push(plan.llama);
-  return ports.sort((a, b) => a - b);
+  return [plan.api, plan.asr, plan.diar, plan.llm, plan.llama, plan.host].sort((a, b) => a - b);
 }
 
 function canBind(port: number, host: string): Promise<boolean> {

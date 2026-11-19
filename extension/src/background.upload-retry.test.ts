@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { sauriHealth } from "./test-backend";
 import { IDBFactory, IDBKeyRange } from "fake-indexeddb";
 import { createCompletion } from "./recording-db";
 
@@ -48,7 +49,7 @@ async function runUpload(fetchImplementation: typeof fetch) {
   vi.resetModules();
   globalThis.indexedDB = new IDBFactory();
   globalThis.IDBKeyRange = IDBKeyRange;
-  globalThis.fetch = ((url: string, init?: RequestInit) => url.endsWith("/health") ? Promise.resolve(new Response("{}")) : fetchImplementation(url, init)) as typeof fetch;
+  globalThis.fetch = ((url: string, init?: RequestInit) => url.endsWith("/health") ? Promise.resolve(sauriHealth()) : fetchImplementation(url, init)) as typeof fetch;
   assembleBlob.mockClear();
   clearSession.mockClear();
   await createCompletion({
@@ -101,6 +102,6 @@ describe("upload failures must remain retryable", () => {
     expect(jobs[0]).toMatchObject({ status: "done", retryCount: 0 });
     expect(clearSession).toHaveBeenCalledWith("synthetic-session");
     expect(chrome.tabs.create).toHaveBeenCalledTimes(1);
-    expect(chrome.tabs.create).toHaveBeenCalledWith({ url: "http://localhost:8000/?meetingId=synthetic-meeting" });
+    expect(chrome.tabs.create).toHaveBeenCalledWith({ url: "http://localhost:41750/?meetingId=synthetic-meeting" });
   });
 });

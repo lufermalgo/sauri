@@ -94,7 +94,7 @@ function update(change: Partial<AppConfig>): AppConfig {
 }
 
 function context(folders: UserFolders): ServiceContext {
-  return { layout, paths, folders, ports, localUserId: config.localUserId };
+  return { layout, paths, folders, ports, localUserId: config.localUserId, appVersion: app.getVersion() };
 }
 
 function getCore(ctx: ServiceContext): Core {

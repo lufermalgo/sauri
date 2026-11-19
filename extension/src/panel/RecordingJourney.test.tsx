@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { sauriHealth } from "../test-backend";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { IDBFactory } from "fake-indexeddb";
 import { SidePanelApp } from "./SidePanelApp";
@@ -51,7 +52,7 @@ function project(state: unknown) {
 describe("Terra recording journey", () => {
   it("keeps recording available when local pairing is refused, without a login form", async () => {
     vi.mocked(fetch).mockImplementation(async url => String(url).endsWith("/health")
-      ? new Response("{}", { status: 200 }) : new Response("", { status: 403 }));
+      ? sauriHealth() : new Response("", { status: 403 }));
     render(<SidePanelApp />);
     await ready();
     expect(await screen.findByText(copy.listError)).toBeInTheDocument();

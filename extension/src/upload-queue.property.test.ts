@@ -10,6 +10,7 @@
  */
 
 import { describe, it, expect, beforeEach, beforeAll, afterAll, vi } from "vitest";
+import { sauriHealth } from "./test-backend";
 import * as fc from "fast-check";
 import { IDBFactory, IDBKeyRange } from "fake-indexeddb";
 
@@ -171,7 +172,7 @@ describe("T1.3 (#612): truthful upload result and stable retry identity (RED)", 
   function mockUpload(handler: (url: string, init?: RequestInit) => Promise<Response>): void {
     globalThis.fetch = vi.fn(async (input, init) => {
       const url = String(input);
-      if (url.endsWith("/health")) return new Response("{}");
+      if (url.endsWith("/health")) return sauriHealth();
       if (url.endsWith("/ingestion/upload")) return handler(url, init);
       return new Response("unavailable", { status: 503 });
     });

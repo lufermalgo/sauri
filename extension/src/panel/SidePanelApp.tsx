@@ -9,7 +9,6 @@ import { deriveViewState } from "../core/view";
 import {
   listMeetings,
 } from "../core/api/client";
-import { BACKEND_URL } from "../core/backend";
 import { ExtensionNotAllowedError, isLocalAppAvailable } from "../core/local-pairing";
 import { portalDestination } from "./portal";
 import { useT } from "../i18n";
@@ -258,7 +257,7 @@ export function SidePanelApp() {
   const loadNotes = useCallback(async () => {
     setNotesRequest((prev) => ({ phase: "in_progress", data: null, previous: prev.data }));
     try {
-      const notes = await listMeetings(BACKEND_URL);
+      const notes = await listMeetings();
       setExtensionNotAllowed(false);
       setNotesRequest({ phase: "success", data: notes, previous: null });
     } catch (error) {
@@ -382,7 +381,7 @@ export function SidePanelApp() {
   };
 
   const handleOpenNote = async (meetingId: string) => {
-    try { await chrome.tabs.create({ url: portalDestination(meetingId) }); }
+    try { await chrome.tabs.create({ url: await portalDestination(meetingId) }); }
     catch { setStartError(t("panel:commandError")); }
   };
 

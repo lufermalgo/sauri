@@ -1,6 +1,7 @@
 """sauri backend – FastAPI application entry point."""
 
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -30,6 +31,15 @@ from app.templates.router import router as templates_router
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
+API_VERSION = "0.1.0"
+# Stable signature of /health: the extension only talks to a local program that answers with it.
+HEALTH_SERVICE = "sauri"
+
+
+def app_version() -> str:
+    """The desktop app's version (``SAURI_APP_VERSION``), else the API's own."""
+    return os.environ.get("SAURI_APP_VERSION", "").strip() or API_VERSION
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -50,7 +60,7 @@ def create_app() -> FastAPI:
     application = FastAPI(
         title="Sauri",
         description="Summan's internal commercial-meeting intelligence platform",
-        version="0.1.0",
+        version=API_VERSION,
         lifespan=lifespan,
         docs_url=docs_url,
         redoc_url=redoc_url,
@@ -81,8 +91,8 @@ def create_app() -> FastAPI:
 
     @application.get("/health")
     async def health() -> dict[str, str]:
-        """Health-check endpoint."""
-        return {"status": "ok"}
+        """Health check with Sauri's signature, so the extension can tell this API from another local program."""
+        return {"status": "ok", "service": HEALTH_SERVICE, "version": app_version()}
 
     mount_portal(application)
 

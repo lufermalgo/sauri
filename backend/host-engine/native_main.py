@@ -48,8 +48,24 @@ MAX_ORIGIN_CHARS: Final = 256
 MANAGEMENT_TOKEN_PATH = Path(
     os.getenv("SAURI_MANAGEMENT_TOKEN_FILE", Path.home() / ".config" / "sauri" / "management_token")
 )
+DEFAULT_API_PORT: Final = 8000
+
+
+def api_port() -> int:
+    """The API port the block derives from: ``SAURI_API_PORT`` (the desktop app's) or the development 8000."""
+    raw = os.getenv("SAURI_API_PORT", "").strip()
+    if not raw:
+        return DEFAULT_API_PORT
+    if not raw.isdigit() or not 1024 <= int(raw) <= 65530:
+        raise ValueError("SAURI_API_PORT must be a port number between 1024 and 65530")
+    return int(raw)
+
+
 # (id, port) of the host processes this service reports on; the gateways answer /health unauthenticated.
-ENGINES: tuple[tuple[str, int], ...] = (("asr", 8001), ("diar", 8002), ("llm", 8003), ("host", 8005))
+# Each port follows the API's: +1 speech, +2 speakers, +3 summaries, +5 this service.
+ENGINES: tuple[tuple[str, int], ...] = tuple(
+    (engine_id, api_port() + offset) for engine_id, offset in (("asr", 1), ("diar", 2), ("llm", 3), ("host", 5))
+)
 PROBE_TIMEOUT_S: Final = 1.0
 # Recognize models installed by hand when the service starts (tests turn it off: they never touch real files).
 ADOPT_ON_START = os.getenv("SAURI_ADOPT_ON_START", "1") != "0"

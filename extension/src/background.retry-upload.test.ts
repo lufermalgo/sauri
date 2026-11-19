@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { Blob as NativeBlob } from "node:buffer";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { sauriHealth } from "./test-backend";
 import { IDBFactory, IDBKeyRange } from "fake-indexeddb";
 
 interface Message { type: string; sessionId?: string }
@@ -19,7 +20,7 @@ async function setup() {
   let listener!: Listener;
   const upload = vi.fn(async (_url: string, _init?: RequestInit) => new Response(JSON.stringify({ recording_id: "retried-recording", state: "queued" }), { status: 200 }));
   // Only ingestion uploads count; the later processing-status reads are answered with a failure.
-  vi.stubGlobal("fetch", (url: string, init?: RequestInit) => String(url).endsWith("/health") ? Promise.resolve(new Response("{}")) : String(url).endsWith("/ingestion/upload") ? upload(url, init) : Promise.resolve(new Response("", { status: 503 })));
+  vi.stubGlobal("fetch", (url: string, init?: RequestInit) => String(url).endsWith("/health") ? Promise.resolve(sauriHealth()) : String(url).endsWith("/ingestion/upload") ? upload(url, init) : Promise.resolve(new Response("", { status: 503 })));
   vi.stubGlobal("chrome", {
     runtime: {
       onMessage: { addListener: (handler: Listener) => { listener = handler; } },

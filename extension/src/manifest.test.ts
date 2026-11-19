@@ -52,8 +52,8 @@ describe("manifest.json — recording any browser tab with least privilege", () 
     }
   });
 
-  it("adds no host permission: only Meet (static script) and the local backend", () => {
-    expect(manifest.host_permissions).toEqual(["https://meet.google.com/*", "http://localhost:8000/*"]);
+  it("adds no host permission: only Meet (static script) and the local app (its port and the transition one)", () => {
+    expect(manifest.host_permissions).toEqual(["https://meet.google.com/*", "http://localhost:41750/*", "http://localhost:8000/*"]);
     expect(manifest.optional_host_permissions).toBeUndefined();
     expect(manifest.permissions).not.toContain("<all_urls>");
   });
