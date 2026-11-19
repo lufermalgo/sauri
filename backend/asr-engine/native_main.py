@@ -46,7 +46,7 @@ from asr_config import (
     vad_enabled,
     vad_threshold,
 )
-from asr_diagnostics import diagnostic_tail
+from asr_diagnostics import diagnostic_tail, whisper_load_failed
 from asr_prompt import DEFAULT_PROMPT, DEFAULT_PROMPT_LANGUAGE, vocabulary_prompt
 from asr_vad import align_chunks, cut_wav, group_chunks, parse_vad
 from botocore.config import Config
@@ -58,6 +58,7 @@ from pydantic import BaseModel, Field, field_validator
 from sauri_engine_common import cancellation
 from sauri_engine_common.audio import NormalizeError, normalize_to_wav
 from sauri_engine_common.credentials import object_store_credentials
+from sauri_engine_common.custom_models import is_custom_id
 from sauri_engine_common.external.asr_common import AdapterCancelled
 from sauri_engine_common.external.audio_prep import vad_cli_runner
 from sauri_engine_common.external.errors import ProviderError
@@ -349,6 +350,10 @@ def _initial_prompt(language: str) -> tuple[str | None, bool]:
     return None, False
 
 
+class WhisperModelLoadError(Exception):
+    """whisper-cli could not load a chosen model; it stopped before processing any audio."""
+
+
 def _run_whisper(
     wav_path: Path, output: Path, language: str, timeout_s: float, model_path: Path | None = None,
 ) -> dict[str, Any]:
@@ -365,6 +370,8 @@ def _run_whisper(
         run_group(command, check=True, capture_output=True, timeout=timeout_s)
     except subprocess.CalledProcessError as exc:
         logger.error("whisper-cli failed (exit_code=%s); stderr_tail=%s", exc.returncode, diagnostic_tail(exc.stderr))
+        if model_path is not None and whisper_load_failed(exc.returncode, exc.stderr):
+            raise WhisperModelLoadError from exc
         raise
     with output.with_suffix(".json").open() as result_file:
         result = json.load(result_file)
@@ -664,8 +671,20 @@ def _transcribe_audio(
             if selection is not None and selection.engine == asr_parakeet.CATALOG_ENGINE:
                 return _parakeet_response(wav_path, report.audio_ms, request.language, selection, deadline, stage_ms)
             model: dict[str, Any] = {} if selection is None else {"model_path": selection.path}
-            result, language, vad, inference_ms = _transcribe_wav(
-                wav_path, report.audio_ms, request.language, deadline, **model)
+            try:
+                result, language, vad, inference_ms = _transcribe_wav(
+                    wav_path, report.audio_ms, request.language, deadline, **model)
+            except WhisperModelLoadError:
+                if selection is None or not is_custom_id(selection.model_id):
+                    raise  # a catalog model that does not load stays a failure (engine_failed)
+                # A custom model whisper.cpp cannot load: once, the model local:default would run.
+                logger.warning("custom_model_load_failed model=%s fallback=default", selection.model_id)
+                selection = _select_engine(None, request.language)
+                if selection is not None and selection.engine == asr_parakeet.CATALOG_ENGINE:
+                    return _parakeet_response(
+                        wav_path, report.audio_ms, request.language, selection, deadline, stage_ms)
+                result, language, vad, inference_ms = _transcribe_wav(
+                    wav_path, report.audio_ms, request.language, deadline)
             diagnostics: dict[str, object] = {
                 "audio_ms": report.audio_ms,
                 "vad": vad,
