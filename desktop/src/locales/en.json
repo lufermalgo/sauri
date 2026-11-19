@@ -21,7 +21,6 @@
   "startup.title": "Starting Sauri…",
   "startup.database": "Opening the database…",
   "startup.core": "Starting the service…",
-  "startup.engines": "Starting the AI engines…",
   "error.title": "Sauri could not start",
   "error.ports": "Another program is using {ports}. Close it and try again.",
   "error.folder.missing": "The {kind} folder is missing: {path}. If it is on an external drive, connect it.",

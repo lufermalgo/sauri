@@ -32,5 +32,14 @@
     "loading": "Opening Sauri…",
     "error": "Could not connect to Sauri. Check that the app is open.",
     "retry": "Try again"
+  },
+  "desktop": {
+    "update": "Sauri {{version}} · Restart",
+    "updateLabel": "Install Sauri {{version}} and restart",
+    "updating": "Updating to Sauri {{version}}…",
+    "starting": "Getting the engines ready…",
+    "startingHint": "New meetings start processing as soon as they finish starting.",
+    "problem": "Part of Sauri didn't start",
+    "problemHint": "Meetings wait until it recovers; Sauri keeps trying. The details are in “Open logs”, in the Sauri icon on the menu bar."
   }
 }

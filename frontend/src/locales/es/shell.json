@@ -32,5 +32,14 @@
     "loading": "Abriendo Sauri…",
     "error": "No se pudo conectar con Sauri. Comprueba que la app esté abierta.",
     "retry": "Reintentar"
+  },
+  "desktop": {
+    "update": "Sauri {{version}} · Reiniciar",
+    "updateLabel": "Instalar Sauri {{version}} y reiniciar",
+    "updating": "Actualizando a Sauri {{version}}…",
+    "starting": "Preparando motores…",
+    "startingHint": "Las reuniones nuevas empiezan a procesarse en cuanto terminen de arrancar.",
+    "problem": "Una parte de Sauri no arrancó",
+    "problemHint": "Las reuniones esperan hasta que se recupere; Sauri lo sigue intentando. Los detalles están en «Abrir registros», en el icono de Sauri de la barra de menús."
   }
 }

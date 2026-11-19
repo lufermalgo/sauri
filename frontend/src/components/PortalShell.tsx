@@ -4,6 +4,7 @@ import { Library, PanelLeft } from "lucide-react";
 import { navigate, routePath, type Route } from "../router";
 import type { SessionUser } from "../session-user";
 import { readLastMeetingId } from "../last-meeting";
+import { DesktopNotices } from "./DesktopNotices";
 import { ProfileCard } from "./ProfileCard";
 import { useSidebar } from "./useSidebar";
 import { useMediaQuery } from "./useMediaQuery";
@@ -212,6 +213,7 @@ export function PortalShell({ route, user = null, onLogout, children }: PortalSh
         <ProfileCard user={user} route={route} settingsPane={settingsPane} onNavigate={go} onLogout={onLogout} />
       </aside>
       <div className="shell-content">
+        <DesktopNotices />
         <main className="shell-main">{children}</main>
       </div>
     </div>
