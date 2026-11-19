@@ -1,42 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowDown, LoaderCircle } from "lucide-react";
 import { desktopBridge, type ServicesStatus, type UpdateStatus } from "../desktop-bridge";
 import { useT } from "../i18n";
 import { applyError } from "./settings/UpdateSettings";
 import { Icon, StatusBadge } from "./ui";
+import { usePushed } from "./usePushed";
 
 /**
- * Follows one value the desktop app pushes: the getter's answer first, then each event. An event that arrives
- * before the getter answers wins over that (older) answer.
- */
-function usePushed<T>(read: (() => Promise<T>) | undefined, listen: ((listener: (value: T) => void) => () => void) | undefined) {
-  const [value, setValue] = useState<T | null>(null);
-  const pushed = useRef(false);
-  useEffect(() => {
-    if (!read) return;
-    let live = true;
-    const stop = listen?.((next) => {
-      pushed.current = true;
-      setValue(next);
-    });
-    read().then(
-      (first) => {
-        if (live && !pushed.current) setValue(first);
-      },
-      () => undefined,
-    );
-    return () => {
-      live = false;
-      stop?.();
-    };
-  }, [read, listen]);
-  return [value, setValue] as const;
-}
-
-/**
- * The desktop app's notices in the portal's top bar: the verified update waiting for a restart («↓ Sauri 0.1.4 ·
+ * The desktop app's notices: the verified update waiting for a restart («↓ Sauri 0.1.4 ·
  * Reiniciar», the click is the confirmation), the engines still starting, and a service that did not start. In a
- * normal browser there is no bridge and nothing is shown.
+ * normal browser there is no bridge and nothing is shown. On a Mac they sit in the window's top bar, beside the
+ * traffic lights (PortalShell); otherwise in a slim bar on top of the content.
  */
 export function DesktopNotices() {
   const { t } = useT();

@@ -140,7 +140,35 @@ export function servicesStatusOf(value: unknown): ServicesStatus | null {
   return { starting, problem };
 }
 
+/**
+ * How the portal window draws its title bar. `inset` (macOS): no title bar; the traffic lights sit over the portal's
+ * own top bar, which leaves room for them and moves the window. `native`: the system's title bar, nothing to do.
+ */
+export type TitleBar = "inset" | "native";
+
+/** The one place that decides it: main builds the window with it and the preload tells the portal before it paints. */
+export function portalTitleBar(platform: string): TitleBar {
+  return platform === "darwin" ? "inset" : "native";
+}
+
+/** The portal window's state the top bar follows: in native full screen macOS hides the traffic lights. */
+export interface WindowState {
+  fullScreen: boolean;
+}
+
+/** A copy of a window state event, or null when it is not one (the preload's check). */
+export function windowStateOf(value: unknown): WindowState | null {
+  if (typeof value !== "object" || value === null) return null;
+  const { fullScreen } = value as Record<string, unknown>;
+  return typeof fullScreen === "boolean" ? { fullScreen } : null;
+}
+
 export interface PortalDesktopApi {
+  /** Known when the preload runs, so the portal's first paint already has the right top bar. */
+  titleBar: TitleBar;
+  getWindowState(): Promise<WindowState>;
+  /** Calls `listener` when the window enters or leaves full screen; returns the function that stops listening. */
+  onWindowState(listener: (state: WindowState) => void): () => void;
   getPaths(): Promise<FolderUsage[]>;
   relocate(kind: FolderKind): Promise<RelocateResult>;
   /** Calls `listener` with each step of a running move; returns the function that stops listening. */
@@ -157,11 +185,13 @@ export interface PortalDesktopApi {
 export const PORTAL_CHANNELS = {
   getPaths: "portal:get-paths",
   relocate: "portal:relocate",
-  /** Main process -> portal only, like `updateChanged` and `servicesChanged` (the channels the portal listens on). */
+  /** Main process -> portal only, like `updateChanged`, `servicesChanged` and `windowChanged` (the channels the portal listens on). */
   relocateProgress: "portal:relocate-progress",
   updateChanged: "portal:update-changed",
   servicesStatus: "portal:services-status",
   servicesChanged: "portal:services-changed",
+  windowState: "portal:window-state",
+  windowChanged: "portal:window-changed",
   markSetupDone: "portal:mark-setup-done",
   getLocale: "portal:get-locale",
   updateStatus: "portal:update-status",

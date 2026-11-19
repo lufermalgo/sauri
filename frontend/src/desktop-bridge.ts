@@ -89,7 +89,23 @@ export interface ServicesStatus {
   problem: boolean;
 }
 
+/**
+ * How the window draws its title bar (desktop `shared/portal-api.ts`). `inset` (macOS): no title bar, the traffic
+ * lights sit over the portal's top bar, which leaves room for them and moves the window; `native`: nothing to do.
+ */
+export type TitleBar = "inset" | "native";
+
+/** In native full screen macOS hides the traffic lights. */
+export interface WindowState {
+  fullScreen: boolean;
+}
+
 export interface SauriDesktop {
+  /** Missing in app versions that kept the system's title bar. */
+  titleBar?: TitleBar;
+  getWindowState?(): Promise<WindowState>;
+  /** Each time the window enters or leaves full screen; returns the function that stops listening. */
+  onWindowState?(listener: (state: WindowState) => void): () => void;
   getPaths(): Promise<FolderUsage[]>;
   relocate(kind: FolderKind): Promise<RelocateResult>;
   /** Each step of a running move; returns the function that stops listening. Missing in older app versions. */

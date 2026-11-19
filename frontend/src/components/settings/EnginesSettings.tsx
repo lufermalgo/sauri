@@ -284,6 +284,7 @@ export function EnginesSettings() {
       {load.status === "ready" && (
         <ModelsCatalog
           providers={catalogs.targets}
+          canTurnOn={providers.some((provider) => provider.status !== "active")}
           entries={catalogs.entries}
           refreshing={catalogs.refreshing}
           onRefresh={() => void catalogs.refreshAll()}

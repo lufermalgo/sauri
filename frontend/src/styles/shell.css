@@ -427,6 +427,94 @@
   font-size: var(--ds-text-xs);
 }
 
+/*
+ * Window bar (desktop app on a Mac, data-titlebar on .shell-root): the window has no title bar, so this indigo bar
+ * takes its row across the whole window, above the side panel and the content, with the traffic lights at its left.
+ * Its 40px height and the 78px left of it pair with main.ts (trafficLightPosition 16,12: lights centred on the bar,
+ * ending at 70). The room is in screen points, so it is divided by the page zoom; in native full screen macOS hides
+ * the lights and the room goes back. The bar moves the window; its controls (and the notices, whose hint shows on
+ * hover) opt out, since a drag region swallows clicks and hovers.
+ */
+.shell-root[data-titlebar] {
+  --shell-titlebar-h: 40px;
+  --shell-window-controls: 78px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.shell-titlebar {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  gap: var(--ds-space-2);
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: var(--shell-titlebar-h);
+  padding: var(--ds-space-1) var(--ds-space-3) var(--ds-space-1) calc(var(--shell-window-controls) / var(--shell-zoom, 1));
+  color-scheme: dark;
+  color: var(--ds-nav-fg);
+  background: var(--ds-nav-bg);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.shell-root[data-titlebar="full-screen"] .shell-titlebar {
+  padding-left: var(--ds-space-3);
+}
+
+.shell-titlebar :is(a, button, input, .shell-notice-badge, .shell-notice-message) {
+  -webkit-app-region: no-drag;
+}
+
+.shell-titlebar-tool {
+  position: relative;
+  flex: none;
+}
+
+.shell-titlebar-tool .ui-tooltip {
+  right: auto;
+  left: 0;
+  white-space: nowrap;
+}
+
+.shell-titlebar .shell-brand {
+  flex: none;
+  padding: 2px 4px;
+}
+
+/* The notices take the rest of the row, right-aligned, on the bar's own indigo. */
+.shell-titlebar .shell-notices {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+}
+
+.shell-titlebar .shell-notice-message {
+  text-align: right;
+}
+
+.shell-root[data-titlebar] .shell-sidebar {
+  grid-row: 2;
+}
+
+/* The bar and the side panel are one indigo frame; only the content gets a line under the bar. */
+.shell-root[data-titlebar] .shell-content {
+  grid-row: 2;
+  border-top: 1px solid var(--ds-nav-active-bg);
+}
+
+/* The same row on the screens outside the frame (WindowDragArea): invisible, it only moves the window. */
+.window-drag-area {
+  position: fixed;
+  inset: 0 0 auto;
+  height: 40px;
+  -webkit-app-region: drag;
+}
+
 .shell-sr-only {
   position: absolute;
   width: 1px;

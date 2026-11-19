@@ -23,6 +23,7 @@ import {
   unverifiedText,
 } from "./localModelState";
 import type { RowState } from "./localModelState";
+import { licenseName } from "./licenseName";
 import { t, translateIfKnown, useT } from "../../i18n";
 
 /** What every row of a process shares: the computer, the running job and the actions the card performs. */
@@ -182,7 +183,7 @@ function ModelDetails({ model, hardware, recommendation, facts, onClose }: RowPr
   if (missingEngine) {
     notes.push(isLocalMode() ? t("engines:local.needsEngineDesktop") : t("engines:local.needsEngine", { command: `bash ${facts.engineCommand}` }));
   }
-  const license = model.license ? t("engines:local.license", { license: model.license, attribution: model.attribution ?? "" }).trim() : null;
+  const license = model.license ? t("engines:local.license", { license: licenseName(model.license), attribution: model.attribution ?? "" }).trim() : null;
 
   return (
     <Dialog title={t("engines:local.details.title", { name })} closeLabel={t("engines:local.details.close")} onClose={onClose}>

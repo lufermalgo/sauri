@@ -23,7 +23,7 @@
   "loadError": "No pudimos cargar los proveedores.",
   "retry": "Reintentar",
   "providersTitle": "Proveedores externos",
-  "providersHelp": "Servicios que cobran por uso y a los que Sauri llama directamente. Las claves se guardan en este equipo y no vuelven a mostrarse.",
+  "providersHelp": "Servicios en la nube, programas de tu Mac como LM Studio u Ollama y servidores propios a los que Sauri llama directamente. Las claves se guardan en este equipo y no vuelven a mostrarse.",
   "listLabel": "Proveedores",
   "kinds": {
     "openai": {
@@ -138,7 +138,8 @@
     "modelsLoading": "Consultando…",
     "modelsNoList": "Sin lista",
     "modelsNotAsked": "—",
-    "active": "Activo",
+    "on": "Encendido",
+    "off": "Apagado",
     "edit": "Editar «{{name}}»",
     "remove": "Eliminar «{{name}}»",
     "keyShown": "••••{{hint}}",
@@ -178,6 +179,7 @@
     "listLabel": "Modelos por proveedor",
     "loading": "Pidiendo la lista de modelos a cada proveedor…",
     "empty": "Ningún proveedor activo tiene todavía una lista de modelos. Enciende uno y agrega su clave para verla aquí.",
+    "emptyNone": "Todavía no tienes proveedores externos. Agrega uno con «Agregar proveedor» y aquí verás sus modelos.",
     "noMatches": "Ningún modelo coincide con tu búsqueda.",
     "noList": "Este proveedor no entregó una lista de modelos.",
     "summaryNone": "Sin lista de modelos",

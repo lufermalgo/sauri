@@ -8,7 +8,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, dialog, type IpcMainInvokeEvent, ipcMain, Menu, nativeTheme, shell } from "electron";
 import { formatGigabytes, type Locale, type MessageKey, plural, t } from "../i18n.ts";
-import { PORTAL_CHANNELS, type RelocateResult, type ServicesStatus } from "../shared/portal-api.ts";
+import { PORTAL_CHANNELS, portalTitleBar, type RelocateResult, type ServicesStatus, type WindowState } from "../shared/portal-api.ts";
 import { ABOUT_WINDOW_SIZE, aboutView, isRepositoryUrl } from "./about.ts";
 import { ABOUT_CHANNELS } from "../shared/about-api.ts";
 import { setLaunchAtLogin } from "./autostart.ts";
@@ -195,6 +195,10 @@ function sendToPortal(channel: string, payload: unknown): void {
   contents.send(channel, payload);
 }
 
+function portalWindowState(): WindowState {
+  return { fullScreen: Boolean(portalWindow && !portalWindow.isDestroyed() && portalWindow.isFullScreen()) };
+}
+
 function servicesStatus(): ServicesStatus {
   return core?.portalStatus() ?? { starting: false, problem: false };
 }
@@ -337,6 +341,7 @@ function registerPortalApi(): void {
   handle(PORTAL_CHANNELS.updateApply, () => updater?.apply());
   handle(PORTAL_CHANNELS.updateAutoCheck, (on) => updater?.setAutoCheck(on === true));
   handle(PORTAL_CHANNELS.servicesStatus, () => servicesStatus());
+  handle(PORTAL_CHANNELS.windowState, () => portalWindowState());
   handle(PORTAL_CHANNELS.markSetupDone, () => {
     if (phaseADone(config) && config.setupStep !== "done") {
       update({ setupStep: "done" });
@@ -359,6 +364,11 @@ function openPortalWindow(): void {
     minHeight: 600,
     title: "Sauri",
     backgroundColor: "#faf9fe",
+    // macOS: no title bar; the traffic lights sit in the portal's own 40px top bar, centred on it (frontend
+    // `styles/shell.css`, `.shell-titlebar`, which leaves them 78px and drags the window).
+    ...(portalTitleBar(process.platform) === "inset"
+      ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 16, y: 12 } }
+      : {}),
     webPreferences: {
       preload: path.join(DIST, "portal-preload.cjs"),
       contextIsolation: true,
@@ -385,6 +395,10 @@ function openPortalWindow(): void {
   portalWindow.on("closed", () => {
     portalWindow = null;
   });
+  // Native full screen hides the traffic lights: the portal's top bar gives their room back.
+  const sendWindowState = () => sendToPortal(PORTAL_CHANNELS.windowChanged, portalWindowState());
+  portalWindow.on("enter-full-screen", sendWindowState);
+  portalWindow.on("leave-full-screen", sendWindowState);
   void portalWindow.loadURL(portalStartUrl());
 }
 

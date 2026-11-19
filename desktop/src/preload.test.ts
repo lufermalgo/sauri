@@ -30,10 +30,13 @@ describe("portal preload", () => {
       "getLocale",
       "getPaths",
       "getServicesStatus",
+      "getWindowState",
       "markSetupDone",
       "onRelocateProgress",
       "onServicesStatus",
+      "onWindowState",
       "relocate",
+      "titleBar",
       "updates",
     ]);
     const updates = api.updates as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>;
@@ -47,6 +50,7 @@ describe("portal preload", () => {
     await updates.apply();
     await updates.setAutoCheck("yes");
     await api.getServicesStatus();
+    await api.getWindowState();
     expect(invoke.mock.calls).toEqual([
       [PORTAL_CHANNELS.getPaths],
       [PORTAL_CHANNELS.relocate, "models"],
@@ -57,7 +61,14 @@ describe("portal preload", () => {
       [PORTAL_CHANNELS.updateApply],
       [PORTAL_CHANNELS.updateAutoCheck, false],
       [PORTAL_CHANNELS.servicesStatus],
+      [PORTAL_CHANNELS.windowState],
     ]);
+  });
+
+  it("tells the portal before it paints whether macOS draws the traffic lights over its top bar", async () => {
+    await import("./preload.ts");
+    const { titleBar } = exposed.sauriDesktop as { titleBar: unknown };
+    expect(titleBar).toBe(process.platform === "darwin" ? "inset" : "native");
   });
 
   it("listens only on the progress channel, passes checked copies without the IPC event, and stops on request", async () => {
@@ -109,5 +120,19 @@ describe("portal preload", () => {
     expect(seen).toEqual([{ starting: true, problem: false }]);
     stop();
     expect(listeners.get(PORTAL_CHANNELS.servicesChanged)?.size).toBe(0);
+  });
+
+  it("passes checked copies of the window's full screen state, false included, without the IPC event", async () => {
+    await import("./preload.ts");
+    const api = exposed.sauriDesktop as { onWindowState: (listener: (value: unknown) => void) => () => void };
+    const seen: unknown[] = [];
+    const stop = api.onWindowState((value) => seen.push(value));
+    emit(PORTAL_CHANNELS.windowChanged, { fullScreen: true, bounds: { x: 0 } });
+    emit(PORTAL_CHANNELS.windowChanged, { fullScreen: "yes" });
+    emit(PORTAL_CHANNELS.windowChanged, true);
+    emit(PORTAL_CHANNELS.windowChanged, { fullScreen: false });
+    expect(seen).toEqual([{ fullScreen: true }, { fullScreen: false }]);
+    stop();
+    expect(listeners.get(PORTAL_CHANNELS.windowChanged)?.size).toBe(0);
   });
 });

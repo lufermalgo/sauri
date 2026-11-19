@@ -374,7 +374,7 @@ describe("only what this computer has", () => {
     const details = openDetails(PARAKEET_ID);
     expect(within(details).getByText(t("engines:local.recommended"))).toBeInTheDocument();
     expect(within(details).getByText(t("engines:local.reasons.fitsMinimum", { memory: "24 GB", minimum: 8 }))).toBeInTheDocument();
-    expect(within(details).getByText(t("engines:local.license", { license: "CC-BY-4.0", attribution: "Parakeet-TDT-0.6B-v3 by NVIDIA (CC-BY-4.0)" }))).toBeInTheDocument();
+    expect(within(details).getByText(t("engines:local.license", { license: "CC BY 4.0", attribution: "Parakeet-TDT-0.6B-v3 by NVIDIA (CC-BY-4.0)" }))).toBeInTheDocument();
     expect(within(details).getByText(t("engines:local.metalYes"))).toBeInTheDocument();
   });
 
@@ -561,7 +561,7 @@ describe("«Otro modelo» from Hugging Face", () => {
     searchCustom(dialog, "https://huggingface.co/someone/tiny-gguf");
     expect(await within(dialog).findByText(t("engines:local.custom.found", { repo: "someone/tiny-gguf", revision: "0123456" }))).toBeInTheDocument();
     expect(backend.calls).toContainEqual({ method: "POST", path: "/local/custom/resolve", body: { process: "summary", source: "https://huggingface.co/someone/tiny-gguf" } });
-    expect(within(dialog).getByText(t("engines:local.custom.license", { license: "apache-2.0" }))).toBeInTheDocument();
+    expect(within(dialog).getByText(t("engines:local.custom.license", { license: "Apache 2.0" }))).toBeInTheDocument();
     expect(within(dialog).getByText(t("engines:local.custom.oneFile", { file: "tiny-q4_k_m.gguf", size: "1,2 GB" }))).toBeInTheDocument();
     expect(within(dialog).getByText(t("engines:local.custom.safety"))).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("button", { name: t("engines:local.custom.install", { size: "1,2 GB" }) }));
