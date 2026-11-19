@@ -1,13 +1,18 @@
 """Authenticated proxy of the local-model routes of ``host-engine`` (hardware, catalog, install, jobs).
 
 The target is fixed: every route below maps to one host route built from a template, with an id that
-already matched the catalog or job-id alphabet. No query string, body, header or URL from the request is
-forwarded, so a caller cannot steer the call elsewhere (no SSRF) and cannot reach the secret or provider
-routes of the host. The management token stays inside ``host_client`` and no key or secret travels
-through here: these routes carry model ids and download progress only.
+already matched the catalog or job-id alphabet. No query string, header or URL from the request is forwarded
+(nor any body, except the validated fields of the two custom-model routes below), so a caller cannot steer
+the call elsewhere (no SSRF) and cannot reach the secret or provider routes of the host. The management token
+stays inside ``host_client`` and no key or secret travels through here: these routes carry model ids and
+download progress only.
 
 ``POST /adopt`` asks the host to recognize models that are already on this Mac (installed by hand); it takes
 no body and nothing from the request reaches the host. It returns a job like the other long operations.
+
+``POST /custom/resolve`` and ``POST /custom/install`` (a model from a public Hugging Face repository) are the only
+routes with a body. It is validated here (exactly the documented fields, bounded strings) and rebuilt from those
+fields before it is sent; the host validates it again and never takes a URL, size or hash from it.
 
 Installs, verifications and adoptions run as host jobs. The host answers ``202`` at once and the portal polls
 ``GET /jobs/{id}``: each poll is a short, independent call with its own timeout, so no connection is held
@@ -21,14 +26,15 @@ the processes that use a model. Only scalar figures and short lists of words are
 from __future__ import annotations
 
 import re
-from typing import Annotated, Any, Final
+from typing import Annotated, Any, Final, Literal
 
 from fastapi import APIRouter, Depends, Path, status
 from fastapi.responses import JSONResponse, Response
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.auth.authorization import require_sales
 from app.auth.schemas import AuthenticatedUser
-from app.engines.host_client import HostClient, HostError, get_host_client
+from app.engines.host_client import CUSTOM_TIMEOUT_S, HostClient, HostError, get_host_client
 from app.engines.router import get_session
 from app.infra.http_errors import SafeErrorRoute, api_error
 
@@ -74,9 +80,38 @@ def _failure(status_code: int, body: dict[str, Any] | None) -> JSONResponse:
     return JSONResponse(content, status_code=status_code)
 
 
-async def _forward(host: HostClient, method: str, path: str) -> Response:
+CustomProcess = Literal["transcription", "summary"]
+
+
+class CustomResolveIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    process: CustomProcess
+    source: str = Field(min_length=1, max_length=512)
+
+
+class CustomInstallIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    process: CustomProcess
+    repo: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,95}$")
+    revision: str = Field(pattern=r"^[0-9a-f]{40}$")
+    file: str = Field(min_length=1, max_length=512, pattern=r"^[A-Za-z0-9._+/-]+$")
+
+    @field_validator("file")
+    @classmethod
+    def _relative_path(cls, value: str) -> str:
+        if any(segment in ("", ".", "..") for segment in value.split("/")):
+            raise ValueError("invalid_file")
+        return value
+
+
+async def _forward(host: HostClient, method: str, path: str, payload: dict[str, Any] | None = None) -> Response:
     try:
-        status_code, body = await host.local(method, path)
+        if payload is None:
+            status_code, body = await host.local(method, path)
+        else:
+            status_code, body = await host.local(method, path, json=payload, timeout=CUSTOM_TIMEOUT_S)
     except HostError:
         raise api_error(status.HTTP_503_SERVICE_UNAVAILABLE, HOST_UNAVAILABLE) from None
     if status_code >= 400:
@@ -107,6 +142,16 @@ async def adopt_models(user: AuthorizedUser, host: Host) -> Response:
 @router.post("/models/{model_id}/install", status_code=status.HTTP_202_ACCEPTED)
 async def install_model(model_id: ModelId, user: AuthorizedUser, host: Host) -> Response:
     return await _forward(host, "POST", f"/v1/local/models/{model_id}/install")
+
+
+@router.post("/custom/resolve")
+async def resolve_custom_model(request: CustomResolveIn, user: AuthorizedUser, host: Host) -> Response:
+    return await _forward(host, "POST", "/v1/local/custom/resolve", request.model_dump())
+
+
+@router.post("/custom/install", status_code=status.HTTP_202_ACCEPTED)
+async def install_custom_model(request: CustomInstallIn, user: AuthorizedUser, host: Host) -> Response:
+    return await _forward(host, "POST", "/v1/local/custom/install", request.model_dump())
 
 
 @router.post("/models/{model_id}/verify", status_code=status.HTTP_202_ACCEPTED)

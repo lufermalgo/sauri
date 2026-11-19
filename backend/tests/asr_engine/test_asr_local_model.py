@@ -21,7 +21,15 @@ from typing import Any
 import httpx
 import pytest
 
-from tests.local_models_support import BIG, SMALL, catalog_entry, install_model, route_header, write_catalog
+from tests.local_models_support import (
+    BIG,
+    SMALL,
+    catalog_entry,
+    install_custom,
+    install_model,
+    route_header,
+    write_catalog,
+)
 
 MODULE_PATH = Path(__file__).resolve().parents[2] / "asr-engine" / "native_main.py"
 sys.path[:0] = [str(MODULE_PATH.parent), str(MODULE_PATH.parent.parent / "engine-common")]
@@ -176,3 +184,21 @@ async def test_route_needs_the_engine_token_and_the_recording_capability(setup: 
         unauthorized = {"Authorization": "Bearer synthetic-token", "X-Sauri-Route": route}
         assert (await client.post("/transcribe", json=body, headers=unauthorized)).status_code == 403
     assert setup.models_used() == []
+
+
+async def test_a_custom_whisper_model_is_used_for_its_route(setup: Setup) -> None:
+    model_id, final = install_custom(setup.models, "transcription", SMALL, "ggml-tiny.bin")
+    response = await setup.transcribe(route_header(f"local:{model_id}", process="transcription"))
+    assert response.status_code == 200, response.text
+    assert response.json()["engine"]["model"] == model_id
+    assert setup.models_used() == [str(final)]
+
+
+async def test_a_custom_model_that_cannot_be_used_transcribes_with_the_default(setup: Setup) -> None:
+    model_id, final = install_custom(setup.models, "transcription", SMALL, "ggml-tiny.bin")
+    final.write_bytes(SMALL + b"changed")
+    for model in (model_id, "custom-0123456789abcdef"):
+        response = await setup.transcribe(route_header(f"local:{model}", process="transcription"))
+        assert response.status_code == 200, response.text
+        assert response.json()["engine"]["model"] == native.MODEL_ID
+    assert setup.models_used() == [str(setup.legacy)] * 2

@@ -342,7 +342,68 @@ export interface LocalModel {
   verified_by?: "hash" | "presence";
   /** What is needed to install it; null when already installed. */
   install?: LocalModelInstallNeeds | null;
+  /** True for a model the user brought from Hugging Face ("Other"); such a model is never recommended. */
+  custom?: boolean;
+  /** Custom models only: the repository, the pinned commit and the file inside the repository. */
+  origin?: LocalModelOrigin;
 }
+
+/** Where a custom model came from: `owner/repo`, the commit it was pinned to and the file path in the repository. */
+export interface LocalModelOrigin {
+  repo: string;
+  revision: string;
+  file: string;
+}
+
+/** Processes that accept a custom model from Hugging Face. */
+export type CustomModelProcess = "transcription" | "summary";
+
+/** `source` is `owner/repo` or a huggingface.co / hf.co URL (repository, `tree`, `blob` or `resolve`). */
+export interface CustomResolveRequest {
+  process: CustomModelProcess;
+  source: string;
+}
+
+/** One file the process can use, with its size and SHA-256 from the repository's LFS metadata. */
+export interface CustomModelFile {
+  path: string;
+  size: number;
+  sha256: string;
+}
+
+export interface CustomResolveResponse {
+  repo: string;
+  /** The commit SHA the repository was pinned to. */
+  revision: string;
+  license: string | null;
+  files: CustomModelFile[];
+}
+
+/** The host reads the size and SHA-256 again; the request names the file only. */
+export interface CustomInstallRequest {
+  process: CustomModelProcess;
+  repo: string;
+  revision: string;
+  file: string;
+}
+
+/**
+ * Why a custom model was refused: another host than Hugging Face, an unreadable source, a repository that does
+ * not exist (or is private), a gated one, no usable file, or Hugging Face could not be reached.
+ */
+export type CustomModelErrorCode =
+  | "host_not_allowed"
+  | "invalid_source"
+  | "invalid_process"
+  | "invalid_revision"
+  | "invalid_file"
+  | "not_found"
+  | "gated"
+  | "no_compatible_files"
+  | "unreachable"
+  | "revision_changed"
+  | "custom_registry_unreadable"
+  | "custom_registry_unwritable";
 
 /** How the last adoption run judged each present file: `adopted`, `present_unverified`, `changed`, `unreadable` or `write_failed`. */
 export interface LocalAdoption {
