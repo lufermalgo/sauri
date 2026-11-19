@@ -1,0 +1,395 @@
+/* «About Sauri» window. Índigo tokens from DESIGN.md (light first, dark by system preference); the isotype keeps its
+   fixed brand colors in both themes. */
+:root {
+  color-scheme: light dark;
+  --ds-bg: #faf9fe;
+  --ds-fg: #161223;
+  --ds-fg-muted: #4a4466;
+  --ds-fg-subtle: #5e5880;
+  --ds-border: #ddd7ee;
+  --ds-border-strong: #7468a8;
+  --ds-accent-text: #4b3c99;
+  --ds-accent-soft: #efebfb;
+  --ds-accent-soft-fg: #3f3480;
+  --ds-accent-line: #5b4bae;
+  --ds-focus: #5b4bae;
+  --ds-nav-bg: #161223;
+  --ds-warning: #705c30;
+  --ds-danger-text: #b83230;
+  --ds-success: #3b6a49;
+  --ds-font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --ds-font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --ds-duration: 150ms;
+  --ds-ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ds-bg: #161223;
+    --ds-fg: #eeeaf8;
+    --ds-fg-muted: #b9b2d6;
+    --ds-fg-subtle: #a9a1cc;
+    --ds-border: #3a3158;
+    --ds-border-strong: #8a7fc0;
+    --ds-accent-text: #b3a8f2;
+    --ds-accent-soft: #2a2342;
+    --ds-accent-soft-fg: #dcd6f7;
+    --ds-accent-line: #9a8ce0;
+    --ds-focus: #c6ff24;
+    --ds-nav-bg: #100d1c;
+    --ds-warning: #d9bd7a;
+    --ds-danger-text: #ff9d97;
+    --ds-success: #8fc29d;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--ds-bg);
+  color: var(--ds-fg);
+  font: 13px/1.45 var(--ds-font-sans);
+  -webkit-font-smoothing: antialiased;
+  cursor: default;
+}
+
+p,
+dl,
+dd {
+  margin: 0;
+}
+
+.frame {
+  display: grid;
+  grid-template-columns: 264px 1fr;
+  height: 100%;
+}
+
+/* Left: the isotype, large, on the navigation indigo (the same panel color as the portal's sidebar). The whole panel
+   and the header move the window, which has no visible title bar. */
+.art {
+  display: grid;
+  place-items: center;
+  background: var(--ds-nav-bg);
+  -webkit-app-region: drag;
+}
+
+.mark {
+  position: relative;
+  width: 160px;
+  height: 160px;
+}
+
+.isotype {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.half,
+.spark {
+  transform-box: view-box;
+  transform-origin: 50px 50px;
+}
+
+/* Two voices: the halves drift a little apart and back, the spark breathes. Slow and small on purpose. */
+.half--second {
+  animation: drift-second 6s var(--ds-ease) infinite alternate;
+}
+
+.half--main {
+  animation: drift-main 6s var(--ds-ease) infinite alternate;
+}
+
+.spark {
+  animation: breathe 3s ease-in-out infinite alternate;
+}
+
+.ring {
+  position: absolute;
+  inset: 0;
+  border: 1.5px solid #9a8ce0;
+  border-radius: 30%;
+  opacity: 0;
+  animation: ripple 6s ease-out infinite;
+}
+
+.ring--late {
+  animation-delay: 3s;
+}
+
+@keyframes drift-second {
+  to {
+    transform: translate(-1.6px, -1.6px);
+  }
+}
+
+@keyframes drift-main {
+  to {
+    transform: translate(1.6px, 1.6px);
+  }
+}
+
+@keyframes breathe {
+  from {
+    transform: scale(0.94);
+  }
+  to {
+    transform: scale(1.1);
+  }
+}
+
+@keyframes ripple {
+  from {
+    opacity: 0.32;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.45);
+  }
+}
+
+/* Right: what Sauri is and what it is doing now. */
+.info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 34px 36px 20px 32px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  -webkit-app-region: drag;
+}
+
+.logo {
+  display: block;
+  width: auto;
+  height: 30px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--ds-accent-soft);
+  color: var(--ds-accent-soft-fg);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.badge:empty {
+  display: none;
+}
+
+.tagline {
+  margin-top: 10px;
+  color: var(--ds-fg-muted);
+  font-size: 14px;
+}
+
+.lines {
+  margin-top: 14px;
+  border-top: 1px solid var(--ds-border);
+}
+
+.line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-height: 28px;
+  padding: 4px 0;
+}
+
+.lines > .line,
+.group {
+  border-bottom: 1px solid var(--ds-border);
+}
+
+.line-label {
+  flex: none;
+  color: var(--ds-fg-muted);
+  font-weight: 500;
+}
+
+.leader {
+  flex: 1;
+  min-width: 16px;
+  border-bottom: 1px dotted var(--ds-border-strong);
+  opacity: 0.55;
+  transform: translateY(-4px);
+}
+
+.line-value {
+  flex: none;
+  max-width: 70%;
+  color: var(--ds-fg);
+  text-align: right;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.mono {
+  font-family: var(--ds-font-mono);
+  font-size: 12px;
+}
+
+.sep {
+  margin: 0 6px;
+  color: var(--ds-fg-subtle);
+}
+
+.state {
+  white-space: nowrap;
+}
+
+.group {
+  padding: 6px 0 4px;
+}
+
+.group-label {
+  color: var(--ds-fg-muted);
+  font-weight: 500;
+}
+
+.line--service {
+  min-height: 0;
+  padding: 1px 0;
+}
+
+.line--service .line-label {
+  display: inline-flex;
+  align-items: center;
+  color: var(--ds-fg);
+  font-weight: 400;
+}
+
+.empty {
+  padding: 2px 0 4px;
+  color: var(--ds-fg-subtle);
+}
+
+.dot {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 50%;
+  vertical-align: 0;
+}
+
+.state .dot {
+  margin-right: 6px;
+}
+
+.dot--ok {
+  background: var(--ds-success);
+}
+
+.dot--busy {
+  background: var(--ds-accent-line);
+  animation: pulse 1.6s ease-in-out infinite alternate;
+}
+
+.dot--waiting {
+  background: var(--ds-warning);
+}
+
+.dot--off {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--ds-border-strong);
+}
+
+.dot--error {
+  background: var(--ds-danger-text);
+}
+
+@keyframes pulse {
+  to {
+    opacity: 0.35;
+  }
+}
+
+.state-text {
+  color: var(--ds-fg-muted);
+}
+
+.state-text--waiting {
+  color: var(--ds-warning);
+}
+
+.state-text--error {
+  color: var(--ds-danger-text);
+  font-weight: 500;
+}
+
+.foot {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: auto;
+  padding-top: 12px;
+  font-size: 12px;
+}
+
+.credits,
+.copyright {
+  color: var(--ds-fg-subtle);
+}
+
+.copyright {
+  font-size: 11px;
+}
+
+.repo {
+  color: var(--ds-accent-text);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  border-radius: 4px;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: color var(--ds-duration) var(--ds-ease);
+}
+
+.repo:hover {
+  text-decoration-thickness: 2px;
+}
+
+.repo:focus-visible {
+  outline: 2px solid var(--ds-focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .half,
+  .spark,
+  .dot--busy {
+    animation: none;
+  }
+
+  .ring {
+    display: none;
+  }
+
+  .repo {
+    transition: none;
+  }
+}

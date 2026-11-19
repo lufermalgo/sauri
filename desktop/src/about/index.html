@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; frame-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sauri</title>
+    <link rel="stylesheet" href="about.css" />
+  </head>
+  <body>
+    <div class="frame">
+      <aside class="art" aria-hidden="true">
+        <div class="mark">
+          <span class="ring"></span>
+          <span class="ring ring--late"></span>
+          <!-- The isotype of brand/sauri-isotype.svg (about.test.ts checks the shapes stay identical). -->
+          <svg class="isotype" viewBox="0 0 100 100" focusable="false">
+            <defs>
+              <clipPath id="about-isotype-shape">
+                <rect x="0" y="0" width="100" height="100" rx="30" />
+              </clipPath>
+            </defs>
+            <g clip-path="url(#about-isotype-shape)">
+              <polygon class="half half--second" fill="#9A8CE0" points="-10,-10 108.3,-10 54.4,43.9 50,39.5 39.5,50 43.9,54.4 -10,108.3" />
+              <polygon class="half half--main" fill="#6A5ACD" points="110,110 110,-8.3 56.1,45.6 60.5,50 50,60.5 45.6,56.1 -8.3,110" />
+              <polygon class="spark" fill="#C6FF24" points="50,39.5 60.5,50 50,60.5 39.5,50" />
+            </g>
+          </svg>
+        </div>
+      </aside>
+      <main class="info" id="info" aria-live="polite">
+        <header class="head">
+          <picture>
+            <source srcset="sauri-logo-dark.svg" media="(prefers-color-scheme: dark)" />
+            <img class="logo" src="sauri-logo.svg" alt="Sauri" width="95" height="30" />
+          </picture>
+          <span class="badge" id="badge"></span>
+        </header>
+        <p class="tagline" id="tagline"></p>
+        <dl class="lines" id="lines"></dl>
+        <footer class="foot">
+          <p class="credits" id="credits"></p>
+          <p><a class="repo" id="repo" target="_blank" rel="noopener noreferrer"></a></p>
+          <p class="copyright" id="copyright"></p>
+        </footer>
+      </main>
+    </div>
+    <script src="about.js"></script>
+  </body>
+</html>

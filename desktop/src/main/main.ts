@@ -5,10 +5,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { app, BrowserWindow, dialog, type IpcMainInvokeEvent, ipcMain, Menu, shell } from "electron";
+import { fileURLToPath } from "node:url";
+import { app, BrowserWindow, dialog, type IpcMainInvokeEvent, ipcMain, Menu, nativeTheme, shell } from "electron";
 import { formatGigabytes, type Locale, type MessageKey, plural, t } from "../i18n.ts";
 import { PORTAL_CHANNELS, type RelocateResult, type ServicesStatus } from "../shared/portal-api.ts";
-import { aboutPanel } from "./about.ts";
+import { ABOUT_WINDOW_SIZE, aboutView, isRepositoryUrl } from "./about.ts";
+import { ABOUT_CHANNELS } from "../shared/about-api.ts";
 import { setLaunchAtLogin } from "./autostart.ts";
 import { type AppConfig, ConfigError, loadConfig, phaseADone, saveConfig } from "./config.ts";
 import { appPaths, FOLDER_KINDS, type FolderKind, folderProblems, PathError, socketPath, type UserFolders } from "./paths.ts";
@@ -80,6 +82,7 @@ let setupWindow: BrowserWindow | null = null;
 /** On a normal start (setup already done) the setup window stays hidden; it shows only for first run or an error. */
 let quietStartup = false;
 let portalWindow: BrowserWindow | null = null;
+let aboutWindow: BrowserWindow | null = null;
 let controller: SetupController | undefined;
 let started = false;
 let quitting = false;
@@ -104,6 +107,7 @@ function getCore(ctx: ServiceContext): Core {
     core.on("change", () => {
       void refreshTray();
       sendToPortal(PORTAL_CHANNELS.servicesChanged, servicesStatus());
+      sendAboutView();
     });
   } else core.setContext(ctx);
   return core;
@@ -620,18 +624,95 @@ async function uninstallFlow(): Promise<void> {
   app.exit(0);
 }
 
-/** «About Sauri» with what is running at the moment it opens. */
+const ABOUT_PAGE = path.join(DIST, "about", "index.html");
+
+function currentAboutView() {
+  return aboutView(locale(), {
+    version: app.getVersion(),
+    year: new Date().getFullYear(),
+    portalUrl: portalUrl(),
+    summary: core?.summary() ?? [],
+    uptimeMs: process.uptime() * 1000,
+    electron: process.versions.electron,
+    system: { version: process.getSystemVersion(), arch: process.arch },
+  });
+}
+
+/** Sends the view again while the «About Sauri» window is open (a service changed, or the language). */
+function sendAboutView(): void {
+  const contents = aboutWindow && !aboutWindow.isDestroyed() ? aboutWindow.webContents : null;
+  if (contents && !contents.isDestroyed()) contents.send(ABOUT_CHANNELS.changed, currentAboutView());
+}
+
+function fromAbout(event: IpcMainInvokeEvent): boolean {
+  const url = event.senderFrame?.url;
+  if (!aboutWindow || event.sender !== aboutWindow.webContents || !url?.startsWith("file:")) return false;
+  return fileURLToPath(url) === ABOUT_PAGE;
+}
+
+function registerAboutApi(): void {
+  ipcMain.removeHandler(ABOUT_CHANNELS.view);
+  ipcMain.handle(ABOUT_CHANNELS.view, (event) => {
+    if (!fromAbout(event)) throw new Error("forbidden");
+    return currentAboutView();
+  });
+}
+
+/** Only the public repository leaves the window, and always to the default browser. */
+function openRepository(url: string): void {
+  if (isRepositoryUrl(url)) void shell.openExternal(url);
+}
+
+/** The «About Sauri» window in front; from the menu-bar icon the app may not be the active one. */
+function focusAbout(): void {
+  if (!aboutWindow || aboutWindow.isDestroyed()) return;
+  aboutWindow.show();
+  if (process.platform === "darwin") app.focus({ steal: true });
+  aboutWindow.focus();
+}
+
+/** «About Sauri»: one window of its own; opening it again brings it to the front. Escape closes it. */
 function showAbout(): void {
-  app.setAboutPanelOptions(
-    aboutPanel(locale(), {
-      version: app.getVersion(),
-      year: new Date().getFullYear(),
-      portalUrl: portalUrl(),
-      summary: core?.summary() ?? [],
-      status: servicesStatus(),
-    }),
-  );
-  app.showAboutPanel();
+  if (aboutWindow && !aboutWindow.isDestroyed()) return focusAbout();
+  aboutWindow = new BrowserWindow({
+    ...ABOUT_WINDOW_SIZE,
+    useContentSize: true,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    titleBarStyle: "hiddenInset",
+    title: t(locale(), "menu.about"),
+    show: false,
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#161223" : "#faf9fe",
+    webPreferences: {
+      preload: path.join(DIST, "about-preload.cjs"),
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+      spellcheck: false,
+    },
+  });
+  const contents = aboutWindow.webContents;
+  contents.on("will-navigate", (event, url) => {
+    event.preventDefault();
+    openRepository(url);
+  });
+  contents.setWindowOpenHandler(({ url }) => {
+    openRepository(url);
+    return { action: "deny" };
+  });
+  contents.on("before-input-event", (event, input) => {
+    if (input.type === "keyDown" && input.key === "Escape") {
+      event.preventDefault();
+      aboutWindow?.close();
+    }
+  });
+  aboutWindow.once("ready-to-show", focusAbout);
+  aboutWindow.on("closed", () => {
+    aboutWindow = null;
+  });
+  void aboutWindow.loadFile(ABOUT_PAGE);
 }
 
 function setAppMenu(): void {
@@ -698,6 +779,7 @@ app.whenReady().then(async () => {
   setAppMenu();
   tray = new SauriTray(locale(), {
     open: showMain,
+    about: showAbout,
     portalUrl,
     openLogs,
     uninstall: () => void uninstallFlow(),
@@ -711,6 +793,7 @@ app.whenReady().then(async () => {
   });
   updater.start();
   registerPortalApi();
+  registerAboutApi();
   controller = new SetupController({
     paths,
     layout,
@@ -723,6 +806,7 @@ app.whenReady().then(async () => {
     onLocale: (value) => {
       tray?.setLocale(value);
       setAppMenu();
+      sendAboutView();
     },
     retry: () => void retry(),
     openLogs,
