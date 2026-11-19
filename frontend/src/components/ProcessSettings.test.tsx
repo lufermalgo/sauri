@@ -493,14 +493,15 @@ describe("local options of the process", () => {
     expect(card).toBeInTheDocument();
     await screen.findByRole("listitem", { name: "qwen-9b" });
     expect(screen.queryByRole("listitem", { name: "whisper-small" })).toBeNull();
-    expect(screen.getByRole("listitem", { name: "qwen-9b" })).toHaveTextContent(t("engines:local.states.active"));
+    expect(screen.getByRole("listitem", { name: "qwen-9b" })).toHaveTextContent(t("engines:local.tags.active"));
   });
 
   it("saves a local model at once with «Usar este», without a privacy notice, and re-reads which one is active", async () => {
     await renderReady("transcription", { models: [TURBO_ACTIVE, SMALL_INSTALLED] });
     const small = await screen.findByRole("listitem", { name: "whisper-small" });
     const readsBefore = backend.calls.filter((call) => call.path === "/local/models").length;
-    fireEvent.click(within(small).getByRole("button", { name: t("engines:local.useLabel", { name: "whisper-small" }) }));
+    fireEvent.click(within(small).getByRole("button", { name: t("engines:local.moreLabel", { name: "whisper-small" }) }));
+    fireEvent.click(screen.getByRole("menuitem", { name: t("engines:local.use") }));
     await waitFor(() => expect(writes()).toHaveLength(1));
     expect(writes()[0].body).toMatchObject({ provider_id: null, model: "local:whisper-small" });
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -516,7 +517,7 @@ describe("local options of the process", () => {
       consents: ["transcription:p1"],
     });
     const turbo = await screen.findByRole("listitem", { name: "whisper-turbo" });
-    expect(within(turbo).queryByText(t("engines:local.states.active"))).toBeNull();
+    expect(within(turbo).queryByText(t("engines:local.tags.active"))).toBeNull();
     const group = screen.getByRole("region", { name: t("engines:local.external.title") });
     expect(within(group).getByText(t("engines:process.externalName", { provider: "Work OpenAI", model: "gpt-a" }))).toBeInTheDocument();
     expect(within(group).getByText(t("engines:local.states.active"))).toBeInTheDocument();

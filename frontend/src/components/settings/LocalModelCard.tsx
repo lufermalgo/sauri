@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { CircleAlert, Terminal } from "lucide-react";
 import type {
   EngineProcess,
@@ -22,7 +23,7 @@ import {
   removeLocalModel,
   verifyLocalModel,
 } from "../../api";
-import { Button, Card, ConfirmDialog, Icon, Menu, MenuItem, ProgressBar, Skeleton, StatusBadge } from "../ui";
+import { Button, Card, ConfirmDialog, Dialog, Icon, Menu, MenuItem, MenuSeparator, ProgressBar, Skeleton, StatusBadge } from "../ui";
 import { availabilityOf, formatBytes, formatMemory, processList, resolvedDefault } from "./engineLabels";
 import "../../styles/engines.css";
 import { t, translateIfKnown, useT } from "../../i18n";
@@ -392,6 +393,8 @@ export function LocalModelCard({
           <ModelList
             process={process}
             models={load.list.models.filter((model) => model.process === process)}
+            hardware={load.hardware}
+            recommendation={load.list.recommendations[process]}
             job={job}
             cancelling={cancelling}
             busyModel={busyModel}
@@ -431,34 +434,38 @@ function chipName(arch: string, system: string): string {
   return t("engines:local.chipOther", { system: system || t("engines:local.chipUnknownSystem"), arch });
 }
 
+/** The computer in one line. The Metal sentence and why a model fits move to each model's «Detalles»; only when no
+ * local model fits this process is the reason (and its cautions) said here, since no model carries it. */
 function HardwareSummary({ hardware, recommendation }: { hardware: LocalHardware; recommendation: LocalRecommendation | undefined }) {
   const { t } = useT();
-  const warnings = recommendation?.warnings ?? [];
+  const unmatched = recommendation && !recommendation.model_id ? recommendation : null;
   return (
     <section className="engines-local-section" aria-label={t("engines:local.hardwareTitle")}>
       <p>
-        {t("engines:local.hardware", {
+        {t("engines:local.hardwareShort", {
           chip: chipName(hardware.arch, hardware.system),
           memory: formatMemory(hardware.memory_gib),
-          count: hardware.cores,
           free: formatBytes(hardware.disk_free_bytes),
         })}
       </p>
-      <p className="settings-help">{hardware.metal ? t("engines:local.metalYes") : t("engines:local.metalNo")}</p>
-      {recommendation && (
-        <p className="settings-help">
-          {recommendation.model_id ? "" : `${t("engines:local.noRecommendation")} `}
-          {reasonText(recommendation, hardware)}
-        </p>
-      )}
-      {warnings.length > 0 && (
-        <ul className="engines-local-warnings">
-          {warnings.map((warning) => (
-            <li key={warning}>{translateIfKnown(`engines:local.warnings.${warning}`) ?? warning}</li>
-          ))}
-        </ul>
+      {unmatched && (
+        <>
+          <p className="settings-help">{`${t("engines:local.noRecommendation")} ${reasonText(unmatched, hardware)}`}</p>
+          <Warnings warnings={unmatched.warnings} />
+        </>
       )}
     </section>
+  );
+}
+
+function Warnings({ warnings }: { warnings: readonly string[] }) {
+  if (warnings.length === 0) return null;
+  return (
+    <ul className="engines-local-warnings">
+      {warnings.map((warning) => (
+        <li key={warning}>{translateIfKnown(`engines:local.warnings.${warning}`) ?? warning}</li>
+      ))}
+    </ul>
   );
 }
 
@@ -498,6 +505,8 @@ function EngineMissing({ process, host = false }: { process: EngineProcess; host
 interface ModelListProps {
   process: EngineProcess;
   models: LocalModel[];
+  hardware: LocalHardware;
+  recommendation: LocalRecommendation | undefined;
   job: LocalJob | null;
   cancelling: boolean;
   busyModel: string | null;
@@ -512,13 +521,38 @@ interface ModelListProps {
   onCancel: () => void;
 }
 
+/** Place of a state in the list: the active model, then the installed ones, then files to check, then the rest. */
+const STATE_RANK: Record<RowState, number> = {
+  active: 0,
+  installed: 1,
+  unverified: 2,
+  corrupt: 2,
+  verifying: 2,
+  installing: 2,
+  available: 3,
+};
+
+/** The options in the order they are shown; the catalog order breaks ties, so the list does not jump around. A
+ * running job does not move its row: the order reads the files, not the job. */
+export function orderOptions(options: readonly LocalModel[], externalActive: boolean, savedKey: string): LocalModel[] {
+  const rank = (model: LocalModel) => STATE_RANK[stateOf(model, null, externalActive, savedKey)];
+  return options
+    .map((model, index) => ({ model, index, rank: rank(model) }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map((entry) => entry.model);
+}
+
 /** The options of the process (models and managed engines), then the supporting files and the engines a model needs
  * in one line each: an engine Parakeet runs on is not a choice of its own. */
 function ModelList(props: ModelListProps) {
   const { t } = useT();
-  const { process, models, job } = props;
+  const { process, models, job, externalActive, savedKey } = props;
   const dependencies = new Set(models.flatMap((model) => (model.needs ? [model.needs] : [])));
-  const options = models.filter((model) => model.kind !== "auxiliary" && !dependencies.has(model.id));
+  const options = orderOptions(
+    models.filter((model) => model.kind !== "auxiliary" && !dependencies.has(model.id)),
+    externalActive,
+    savedKey,
+  );
   const supporting = models.filter((model) => model.kind === "auxiliary");
   const engines = models.filter((model) => dependencies.has(model.id));
   const jobRunning = job?.state === "running" && job.type !== "adopt";
@@ -569,9 +603,71 @@ function modelNoteKey(model: LocalModel): "parakeet" | "whisper" | null {
   return null;
 }
 
+/** What a model is good for, in one short line. */
+function shortNote(model: LocalModel, siblings: readonly LocalModel[]): string {
+  if (model.kind === "model" && model.process === "transcription") {
+    if (model.engine === "fluidaudio") return t("engines:local.short.parakeet");
+    if (model.engine === "whisper.cpp") {
+      const reference = siblings.find((other) => other.default && other.kind === "model" && other.process === model.process);
+      const lighter = !model.default && reference?.size && model.size !== null && model.size < reference.size;
+      return t(lighter ? "engines:local.short.whisperLight" : "engines:local.short.whisper");
+    }
+  }
+  if (model.kind === "model" && model.process === "summary" && model.min_ram_gib > 0) {
+    return t(model.default ? "engines:local.short.summaryFull" : "engines:local.short.summaryLight", { minRam: model.min_ram_gib });
+  }
+  if (model.process === "diarization") return t("engines:local.short.speakers");
+  return model.min_ram_gib > 0
+    ? t("engines:local.descriptionMinRam", { engine: model.engine, minRam: model.min_ram_gib })
+    : t("engines:local.description", { engine: model.engine });
+}
+
+/** The single tag of a card: active, not installed yet, or a file that needs attention. Installed models carry none. */
+function tagOf(state: RowState, installable: boolean): { tone: "neutral" | "progress" | "success" | "error"; text: string } | null {
+  switch (state) {
+    case "active":
+      return { tone: "success", text: t("engines:local.tags.active") };
+    case "available":
+      return installable ? { tone: "neutral", text: t("engines:local.tags.available") } : null;
+    case "unverified":
+    case "corrupt":
+    case "verifying":
+      return { tone: STATE_TONE[state], text: t(`engines:local.states.${state}`) };
+    default:
+      return null;
+  }
+}
+
+/** What a card knows about its model; the card shows the short part and «Detalles» the rest. */
+interface RowFacts {
+  name: string;
+  state: RowState;
+  installed: boolean;
+  managed: boolean;
+  component: boolean;
+  unpublished: boolean;
+  missingEngine: boolean;
+  needed: number | null;
+  noRoom: boolean;
+  /** The command that installs a managed engine or the engine a model needs, outside the desktop app. */
+  command: string | null;
+  engineCommand: string;
+}
+
+/** The one line under the name: what needs the person's attention first, else what the model is good for. */
+function rowLine(model: LocalModel, siblings: readonly LocalModel[], facts: RowFacts): string {
+  if (facts.state === "unverified" || facts.state === "corrupt") return unverifiedText(model);
+  if (facts.missingEngine) return isLocalMode() ? t("engines:local.needsEngineDesktop") : t("engines:local.short.needsEngine");
+  if (facts.unpublished && !facts.installed) return t("engines:local.short.unpublished");
+  if (facts.managed && !facts.installed) return isLocalMode() ? t("engines:local.managedDesktop") : t("engines:local.short.managedHow");
+  if (facts.noRoom && facts.needed !== null && facts.state === "available") return t("engines:local.notEnoughSpace", { size: formatBytes(facts.needed) });
+  return shortNote(model, siblings);
+}
+
 function ModelRow(props: RowProps) {
   const { t } = useT();
   const { process, model, job, cancelling, busyModel, choosing, externalActive, savedKey, onUse, onInstall, onVerify, onRemove, onCancel } = props;
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const jobRunning = job?.state === "running";
   const running = jobRunning && job.model_id === model.id ? job : null;
   const state = stateOf(model, running, externalActive, savedKey);
@@ -582,18 +678,22 @@ function ModelRow(props: RowProps) {
   const titled = model.kind === "managed_engine" || component;
   const name = (titled && translateIfKnown(`engines:local.managedTitle.${process}`)) || model.id;
   const titleId = `engines-model-${process}-${model.id}`;
-  const size = model.size ?? model.installed_size;
   const installed = availabilityOf(model) === "installed";
-  const command = model.install?.managed_by ?? model.managed_by;
   const needed = model.install?.disk_required_bytes ?? (model.size !== null ? Math.ceil(model.size * DISK_HEADROOM) : null);
   const noRoom = model.install?.fits_on_disk === false;
   const removal = removalBlock(model);
-  const inUse = model.in_use ?? model.in_use_by.length > 0;
-  const siblings = props.models;
-  const noteKey = modelNoteKey(model);
-  const isFallback = model.default && siblings.some((other) => other.preferred === true);
-  const engineEntry = model.needs ? siblings.find((other) => other.id === model.needs) : undefined;
   const missingEngine = installed && model.needs_ready === false;
+  const engineEntry = model.needs ? props.models.find((other) => other.id === model.needs) : undefined;
+  const facts: RowFacts = {
+    name, state, installed, managed, component, unpublished, missingEngine, needed, noRoom,
+    command: model.install?.managed_by ?? model.managed_by,
+    engineCommand: engineEntry?.managed_by ?? engineEntry?.install?.managed_by ?? "scripts/engines/install-parakeet-engine.sh",
+  };
+  const canUse = state === "installed" && !missingEngine;
+  const canInstall = (state === "available" || (component && (state === "unverified" || state === "corrupt"))) && !managed && !unpublished;
+  const present = !managed && availabilityOf(model) !== "available" && state !== "verifying";
+  const tag = tagOf(state, !unpublished);
+  const roomNote = noRoom && needed !== null ? t("engines:local.notEnoughSpace", { size: formatBytes(needed) }) : null;
 
   return (
     <li
@@ -603,89 +703,136 @@ function ModelRow(props: RowProps) {
       <div className="engines-local-row-main">
         <div className="engines-local-row-head">
           <span id={titleId} className="engines-local-model-name">{name}</span>
-          {size !== null && <span className="engines-local-size">{formatBytes(size)}</span>}
+          {tag && <StatusBadge tone={tag.tone} dot={state === "active"}>{tag.text}</StatusBadge>}
         </div>
-        <div className="engines-local-badges">
-          {state === "active" && <StatusBadge tone="success">{t("engines:local.states.installed")}</StatusBadge>}
-          <StatusBadge tone={STATE_TONE[state]} dot={state === "active"}>{t(`engines:local.states.${state}`)}</StatusBadge>
-          {model.location === "legacy" && <StatusBadge tone="neutral">{t("engines:local.manual")}</StatusBadge>}
-          {model.recommended && <StatusBadge tone="success">{t("engines:local.recommended")}</StatusBadge>}
-          {isFallback && <StatusBadge tone="neutral">{t("engines:local.fallbackBadge")}</StatusBadge>}
-          {model.kind !== "managed_engine" && (
-            <StatusBadge tone={model.status === "measured" ? "success" : "progress"}>{t(`engines:local.marks.${model.status}`)}</StatusBadge>
-          )}
-        </div>
-        <p className="settings-help">
-          {managed && installed ? t("engines:local.managedInstalled") : (model.min_ram_gib > 0 ? t("engines:local.descriptionMinRam", { engine: model.engine, minRam: model.min_ram_gib }) : t("engines:local.description", { engine: model.engine }))}
-          {installed && model.verified_by && ` ${t(`engines:local.verifiedBy.${model.verified_by}`)}`}
-        </p>
-        {noteKey && <p className="settings-help">{t(`engines:local.modelNotes.${noteKey}`)}</p>}
-        {missingEngine && (
-          <p className="settings-help">
-            {isLocalMode()
-              ? t("engines:local.needsEngineDesktop")
-              : t("engines:local.needsEngine", { command: `bash ${engineEntry?.managed_by ?? engineEntry?.install?.managed_by ?? "scripts/engines/install-parakeet-engine.sh"}` })}
-          </p>
-        )}
-        {model.license && model.attribution && (
-          <p className="settings-help">{t("engines:local.license", { license: model.license, attribution: model.attribution })}</p>
-        )}
-        {(state === "unverified" || state === "corrupt") && <p className="settings-help">{unverifiedText(model)}</p>}
-        {inUse && model.in_use_by.length > 0 && state !== "available" && (
-          <p className="settings-help">{t("engines:local.inUse", { list: processList(model.in_use_by) })}</p>
-        )}
-        {managed && !installed && !running && command && (
-          <p className="settings-help">{isLocalMode() ? t("engines:local.managedDesktop") : t("engines:local.managedHow", { command: `bash ${command}` })}</p>
-        )}
-        {component && !installed && !running && (
-          <p className="settings-help">{t(unpublished ? "engines:local.componentUnavailable" : "engines:local.componentHow")}</p>
-        )}
-        {noRoom && !running && needed !== null && (
-          <p id={`${titleId}-room`} className="settings-help">{t("engines:local.notEnoughSpace", { size: formatBytes(needed) })}</p>
-        )}
+        <p className="settings-help">{rowLine(model, props.models, facts)}</p>
       </div>
 
       {!running && (
         <div className="engines-local-row-actions">
-          {state === "installed" && !missingEngine && (
-            <Button variant="secondary" size="sm" aria-label={t("engines:local.useLabel", { name })} disabled={choosing || blocked} onClick={() => onUse(model)}>
-              {t("engines:local.use")}
-            </Button>
-          )}
-          {(state === "available" || (component && (state === "unverified" || state === "corrupt"))) && !managed && !unpublished && (
-            <>
-              {needed !== null && !noRoom && <span className="settings-help">{t("engines:local.spaceNeeded", { size: formatBytes(needed) })}</span>}
-              <Button
-                variant="primary"
-                size="sm"
-                aria-label={t("engines:local.installLabel", { id: name })}
-                aria-describedby={noRoom ? `${titleId}-room` : undefined}
-                disabled={blocked || noRoom}
-                onClick={() => onInstall(model)}
-              >
-                {t("engines:local.install")}
-              </Button>
-            </>
-          )}
-          {(state === "unverified" || state === "corrupt") && (
-            <Button variant="secondary" size="sm" aria-label={t("engines:local.verifyLabel", { id: name })} disabled={blocked} onClick={() => onVerify(model)}>
-              {t("engines:local.verify")}
-            </Button>
-          )}
-          {!managed && availabilityOf(model) !== "available" && state !== "verifying" && (
-            <Menu label={t("engines:local.moreLabel", { name })}>
-              <MenuItem onSelect={() => onVerify(model)} disabled={blocked}>{t("engines:local.verify")}</MenuItem>
-              <MenuItem tone="danger" onSelect={() => onRemove(model)} disabled={blocked || removal !== null} hint={removal ?? undefined}>
-                {t("engines:local.remove")}
-              </MenuItem>
-              {removal && <p role="presentation" className="engines-local-menu-note">{removal}</p>}
-            </Menu>
-          )}
+          <Menu label={t("engines:local.moreLabel", { name })}>
+            {canUse && (
+              <MenuItem onSelect={() => onUse(model)} disabled={choosing || blocked}>{t("engines:local.use")}</MenuItem>
+            )}
+            {canInstall && (
+              <>
+                <MenuItem onSelect={() => onInstall(model)} disabled={blocked || noRoom} hint={roomNote ?? undefined}>
+                  {needed !== null ? t("engines:local.installWithSize", { size: formatBytes(needed) }) : t("engines:local.install")}
+                </MenuItem>
+                {roomNote && <p role="presentation" className="engines-local-menu-note">{roomNote}</p>}
+              </>
+            )}
+            {present && (
+              <>
+                <MenuItem onSelect={() => onVerify(model)} disabled={blocked}>{t("engines:local.verify")}</MenuItem>
+                <MenuItem tone="danger" onSelect={() => onRemove(model)} disabled={blocked || removal !== null} hint={removal ?? undefined}>
+                  {t("engines:local.remove")}
+                </MenuItem>
+                {removal && <p role="presentation" className="engines-local-menu-note">{removal}</p>}
+              </>
+            )}
+            {(canUse || canInstall || present) && <MenuSeparator />}
+            <MenuItem onSelect={() => setDetailsOpen(true)}>{t("engines:local.details.open")}</MenuItem>
+          </Menu>
         </div>
       )}
 
       {running && <JobProgress job={running} cancelling={cancelling} onCancel={onCancel} />}
+      {detailsOpen && <ModelDetails {...props} facts={facts} onClose={() => setDetailsOpen(false)} />}
     </li>
+  );
+}
+
+function Detail({ term, children }: { term: string; children: ReactNode }) {
+  return (
+    <div className="engines-local-detail">
+      <dt>{term}</dt>
+      <dd>{children}</dd>
+    </div>
+  );
+}
+
+/** Everything the card leaves out: state and use, size, engine and memory, speed and accuracy, the catalog check,
+ * the measured mark and the recommendation, the license and attribution (CC-BY-4.0 asks for it), and the computer. */
+function ModelDetails({ model, hardware, recommendation, facts, onClose }: RowProps & { facts: RowFacts; onClose: () => void }) {
+  const { t } = useT();
+  const { name, state, installed, managed, component, unpublished, missingEngine, needed, noRoom, command } = facts;
+  const size = model.size ?? model.installed_size;
+  const inUse = (model.in_use ?? model.in_use_by.length > 0) && model.in_use_by.length > 0 && state !== "available";
+  const noteKey = modelNoteKey(model);
+  const recommendedHere = recommendation?.model_id === model.id;
+  const check = state === "unverified" || state === "corrupt" ? unverifiedText(model)
+    : installed && model.verified_by ? t(`engines:local.verifiedBy.${model.verified_by}`) : null;
+  const notes: string[] = [];
+  if (missingEngine) {
+    notes.push(isLocalMode() ? t("engines:local.needsEngineDesktop") : t("engines:local.needsEngine", { command: `bash ${facts.engineCommand}` }));
+  }
+  if (managed && !installed && command) {
+    notes.push(isLocalMode() ? t("engines:local.managedDesktop") : t("engines:local.managedHow", { command: `bash ${command}` }));
+  }
+  if (component && !installed) notes.push(t(unpublished ? "engines:local.componentUnavailable" : "engines:local.componentHow"));
+  if (noRoom && needed !== null) notes.push(t("engines:local.notEnoughSpace", { size: formatBytes(needed) }));
+  const license = model.license ? t("engines:local.license", { license: model.license, attribution: model.attribution ?? "" }).trim() : null;
+
+  return (
+    <Dialog title={t("engines:local.details.title", { name })} closeLabel={t("engines:local.details.close")} onClose={onClose}>
+      <dl className="engines-local-details">
+        {name !== model.id && <Detail term={t("engines:local.details.id")}><code>{model.id}</code></Detail>}
+        <Detail term={t("engines:local.details.state")}>
+          <p>
+            {state === "active" ? `${t("engines:local.states.installed")} · ${t("engines:local.states.active")}` : t(`engines:local.states.${state}`)}
+            {model.location === "legacy" && ` · ${t("engines:local.manual")}`}
+          </p>
+          {inUse && <p>{t("engines:local.inUse", { list: processList(model.in_use_by) })}</p>}
+        </Detail>
+        {size !== null && (
+          <Detail term={t("engines:local.details.size")}>
+            <p>
+              {formatBytes(size)}
+              {!installed && needed !== null && ` · ${t("engines:local.spaceNeeded", { size: formatBytes(needed) })}`}
+            </p>
+          </Detail>
+        )}
+        <Detail term={t("engines:local.details.engine")}>
+          <p>
+            {managed && installed ? t("engines:local.managedInstalled")
+              : model.min_ram_gib > 0 ? t("engines:local.descriptionMinRam", { engine: model.engine, minRam: model.min_ram_gib })
+                : t("engines:local.description", { engine: model.engine })}
+          </p>
+        </Detail>
+        {noteKey && <Detail term={t("engines:local.details.speed")}><p>{t(`engines:local.modelNotes.${noteKey}`)}</p></Detail>}
+        {check && <Detail term={t("engines:local.details.check")}><p>{check}</p></Detail>}
+        {model.kind !== "managed_engine" && (
+          <Detail term={t("engines:local.details.rating")}>
+            <p>{`${t(`engines:local.marks.${model.status}`)}. ${t(`engines:local.markHelp.${model.status}`)}`}</p>
+            {model.recommended && <p>{t("engines:local.recommended")}</p>}
+            {recommendedHere && recommendation && (
+              <>
+                <p>{reasonText(recommendation, hardware)}</p>
+                <Warnings warnings={recommendation.warnings} />
+              </>
+            )}
+          </Detail>
+        )}
+        {license && <Detail term={t("engines:local.details.license")}><p>{license}</p></Detail>}
+        {notes.length > 0 && (
+          <Detail term={t("engines:local.details.notes")}>
+            {notes.map((note) => <p key={note}>{note}</p>)}
+          </Detail>
+        )}
+        <Detail term={t("engines:local.details.computer")}>
+          <p>
+            {t("engines:local.hardware", {
+              chip: chipName(hardware.arch, hardware.system),
+              memory: formatMemory(hardware.memory_gib),
+              count: hardware.cores,
+              free: formatBytes(hardware.disk_free_bytes),
+            })}
+          </p>
+          <p>{hardware.metal ? t("engines:local.metalYes") : t("engines:local.metalNo")}</p>
+        </Detail>
+      </dl>
+    </Dialog>
   );
 }
 
