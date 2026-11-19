@@ -129,8 +129,8 @@ class HardenedMiddleware:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    if ADOPT_ON_START:
-        await adopt_on_startup()
+    # Full adoption only when asked for; otherwise re-confirm models Sauri already verified (moved folder).
+    await adopt_on_startup(reverify_only=not ADOPT_ON_START)
     yield
 
 

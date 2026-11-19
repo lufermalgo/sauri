@@ -242,6 +242,10 @@ class LocalModelError(Exception):
         return JSONResponse(status_code=self.status, content={"error": {"code": self.code, **self.extra}})
 
 
+class NothingToAdoptError(Exception):
+    """No file needs hashing, so no adoption job was started."""
+
+
 class JobError(Exception):
     """An install or verify job ended with a class code."""
 
@@ -1260,16 +1264,22 @@ class LocalModelService:
 
     # --- adoption ---------------------------------------------------------------------------------
 
-    def adopt(self) -> Job:
+    def adopt(self, *, reverify_only: bool = False, skip_if_nothing: bool = False) -> Job:
         """Recognize catalog files that are already on disk; see the module docstring.
 
         Idempotent: a run already in progress is returned as is, and a model already verified (or already
         judged different at its current size and ``mtime_ns``) is not hashed again.
+
+        ``reverify_only`` limits the run to files Sauri itself had verified (manifest says ``installed`` with
+        the catalog SHA-256) whose size or ``mtime_ns`` changed since, as after the models folder is moved
+        by copying. ``skip_if_nothing`` raises ``NothingToAdoptError`` instead of starting a job with no candidates.
         """
         if self._active is not None and self._active.type == "adopt":
             return self._active
         self._require_idle()
-        candidates = self._adoption_candidates()
+        candidates = self._adoption_candidates(reverify_only=reverify_only)
+        if skip_if_nothing and not candidates:
+            raise NothingToAdoptError
         job = Job(
             id=uuid.uuid4().hex,
             model_id=ADOPT_JOB_MODEL,
@@ -1286,7 +1296,7 @@ class LocalModelService:
             return model.size or 0 if found.snap is not None else 0
         return found.info.st_size if found.info.st_size == model.size else 0
 
-    def _adoption_candidates(self) -> list[tuple[CatalogModel, _Found]]:
+    def _adoption_candidates(self, *, reverify_only: bool = False) -> list[tuple[CatalogModel, _Found]]:
         candidates = []
         for model in self.catalog.models:
             if not model.downloadable or model.kind == "component":
@@ -1296,6 +1306,13 @@ class LocalModelService:
                 continue
             record = read_manifest(self._paths(model)[2])
             same_place = record is not None and manifest_location(record) == found.location
+            if reverify_only and not (
+                record is not None
+                and same_place
+                and record.get("status") == "installed"
+                and record.get("sha256") == model.sha256
+            ):
+                continue  # never verified by Sauri: only a manual or full adoption claims such a file
             if record is not None and same_place and self._already_judged(record, found):
                 continue
             candidates.append((model, found))
@@ -1502,9 +1519,19 @@ async def cancel_route(job_id: str) -> dict[str, Any] | Response:
         return exc.response()
 
 
-async def adopt_on_startup() -> None:
-    """Recognize models installed by hand when the host engine starts; a failure never stops the service."""
+async def adopt_on_startup(*, reverify_only: bool = False) -> None:
+    """Hash in the background the files that need it when the host engine starts; never blocks or stops it.
+
+    Full mode recognizes models installed by hand; ``reverify_only`` just re-confirms models Sauri had
+    already verified whose modification time changed (the models folder was moved by copying). Nothing
+    starts when no file needs hashing, so a normal start stays cheap. An install or verify requested while
+    this job runs gets ``409 job_active`` (one job at a time), like any other running job.
+    """
     try:
-        get_service().adopt()
+        service = get_service()
+        job = service.adopt(reverify_only=reverify_only, skip_if_nothing=True)
+        logger.info("local_model_startup_adoption job=%s mode=%s", job.id, "reverify" if reverify_only else "full")
+    except NothingToAdoptError:
+        pass
     except LocalModelError as exc:
         logger.warning("local_model_adoption_skipped code=%s", exc.code)
