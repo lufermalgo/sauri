@@ -19,16 +19,23 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  # Upload and deploy run as separate jobs: deploy-pages in the same job as the upload sometimes
+  # listed no artifact yet ("Found 0 artifact(s)").
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v5
         with:
           path: landing
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v5
