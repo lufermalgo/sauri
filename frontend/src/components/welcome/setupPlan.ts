@@ -1,6 +1,7 @@
 import type { EngineProcess, EngineProcessState, LocalModel, LocalModelList } from "@sauri/shared-types";
 import { choiceKeyOf } from "../settings/LocalModelCard";
 import { availabilityOf } from "../settings/engineLabels";
+import { LOW_MEMORY_WARNING } from "../settings/localModelState";
 
 /** One file the first run still has to put on this Mac. */
 export interface PlanItem {
@@ -52,4 +53,9 @@ export function recommendedChoices(list: LocalModelList, processes: readonly Eng
     const key = choiceKeyOf(model, list.models);
     return key === state.model ? [] : [{ ...state, model: key }];
   });
+}
+
+/** Whether the host flagged this Mac as low on memory in any process's recommendation. */
+export function isLowMemory(list: LocalModelList): boolean {
+  return Object.values(list.recommendations).some((rec) => rec?.warnings.includes(LOW_MEMORY_WARNING) ?? false);
 }

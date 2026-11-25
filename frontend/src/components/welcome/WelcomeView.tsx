@@ -15,7 +15,7 @@ import { desktopBridge } from "../../desktop-bridge";
 import { JOB_POLL_INTERVAL_MS } from "../settings/LocalModelCard";
 import { formatBytes } from "../settings/engineLabels";
 import { BrandLogo, Button, Icon, ProgressBar } from "../ui";
-import { actionFor, pendingItems, recommendedChoices } from "./setupPlan";
+import { actionFor, isLowMemory, pendingItems, recommendedChoices } from "./setupPlan";
 import "../../styles/settings.css";
 import "../../styles/welcome.css";
 import { useT } from "../../i18n";
@@ -133,6 +133,7 @@ function ModelsStep({ onContinue, pollIntervalMs = JOB_POLL_INTERVAL_MS }: { onC
   const { t } = useT();
   const [phase, setPhase] = useState<Phase>({ kind: "preparing" });
   const [attempt, setAttempt] = useState(0);
+  const [lowMemory, setLowMemory] = useState(false);
 
   useEffect(() => {
     let stopped = false;
@@ -173,6 +174,7 @@ function ModelsStep({ onContinue, pollIntervalMs = JOB_POLL_INTERVAL_MS }: { onC
     async function run() {
       setPhase({ kind: "preparing" });
       let list = await settle(check(await listLocalModels()));
+      setLowMemory(isLowMemory(list));
       const items = pendingItems(list);
       const total = items.reduce((sum, item) => sum + item.bytes, 0);
       let done = 0;
@@ -225,6 +227,7 @@ function ModelsStep({ onContinue, pollIntervalMs = JOB_POLL_INTERVAL_MS }: { onC
     <section className="welcome-section" aria-labelledby="welcome-models-title" aria-busy={busy}>
       <h2 id="welcome-models-title" className="welcome-section-title">{t("welcome:models.title")}</h2>
       <p className="settings-help">{t("welcome:models.intro")}</p>
+      {lowMemory && <p className="settings-help">{t("welcome:models.lowMemory")}</p>}
       <div role="status" className="welcome-install">
         {phase.kind === "preparing" && <p>{t("welcome:models.preparing")}</p>}
         {phase.kind === "waiting" && <p>{t("welcome:models.waiting")}</p>}

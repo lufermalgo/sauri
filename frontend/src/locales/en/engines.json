@@ -355,11 +355,13 @@
       "metal": "your computer doesn't have Metal acceleration",
       "macos": "your version of macOS is older than it requires"
     },
+    "lowMemorySummary": "To keep the Mac lighter, you can also send summaries to an external service.",
     "warnings": {
       "unmeasured_proposal": "It's a proposal not yet measured with real meetings.",
       "lower_quality_expected": "Lower quality than the largest model is expected.",
       "suggest_external_provider": "If you need more quality, consider an external provider for this process.",
-      "no_metal_slow": "Without Metal acceleration this process will be slow."
+      "no_metal_slow": "Without Metal acceleration this process will be slow.",
+      "low_memory_slow": "With less than 16 GB of memory Sauri works, but it processes more slowly and can slow the Mac down while it works. 16 GB or more is recommended."
     },
     "modelsTitle": "Installed models",
     "states": {

@@ -254,6 +254,25 @@ afterEach(() => {
 });
 
 describe("only what this computer has", () => {
+  it("tells a Mac below 16 GB that processing is slower, and on summaries that an external service is lighter", async () => {
+    const low = (process: EngineProcess, modelId: string): LocalRecommendation => ({
+      ...defaultRecommendation(process, modelId), warnings: ["lower_quality_expected", "low_memory_slow"],
+    });
+    const recommendations = { transcription: low("transcription", "whisper-turbo"), summary: low("summary", "qwen-9b") };
+    await renderCard([TURBO], { recommendations });
+    const notice = t("engines:local.warnings.low_memory_slow");
+    expect(screen.getByText(notice)).toBeInTheDocument();
+    expect(screen.queryByText(new RegExp(t("engines:local.lowMemorySummary")))).toBeNull();
+    cleanup();
+
+    await renderCard([QWEN_9B], { recommendations }, { process: "summary" });
+    expect(screen.getByText(`${notice} ${t("engines:local.lowMemorySummary")}`)).toBeInTheDocument();
+    cleanup();
+
+    await renderCard([TURBO]);
+    expect(screen.queryByText(notice)).toBeNull();
+  });
+
   it("lists only the installed models of the process, with their size on disk and state", async () => {
     const summary = model({ id: "qwen-9b", process: "summary", engine: "llama.cpp" });
     await renderCard([TURBO, SMALL, PARAKEET, summary, SENKO]);

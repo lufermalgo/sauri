@@ -345,11 +345,13 @@
       "metal": "tu equipo no tiene aceleración Metal",
       "macos": "tu versión de macOS es anterior a la que pide"
     },
+    "lowMemorySummary": "Para que el Mac vaya más liviano, también puedes enviar los resúmenes a un servicio externo.",
     "warnings": {
       "unmeasured_proposal": "Es una propuesta sin medir con reuniones reales.",
       "lower_quality_expected": "Se espera una calidad menor que con el modelo más grande.",
       "suggest_external_provider": "Si necesitas más calidad, considera un proveedor externo para este proceso.",
-      "no_metal_slow": "Sin aceleración Metal este proceso será lento."
+      "no_metal_slow": "Sin aceleración Metal este proceso será lento.",
+      "low_memory_slow": "Con menos de 16 GB de memoria Sauri funciona, pero procesa más despacio y puede volver lento el Mac mientras trabaja. Recomendamos 16 GB o más."
     },
     "modelsTitle": "Modelos instalados",
     "states": {

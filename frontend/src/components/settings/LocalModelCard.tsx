@@ -21,7 +21,16 @@ import type { Outcome } from "./AddModelDialog";
 import { formatBytes, resolvedDefault } from "./engineLabels";
 import { EngineLine, ModelRow, SupportLine } from "./LocalModelRow";
 import type { RowContext } from "./LocalModelRow";
-import { describeLocalError, diskSize, displayName, errorCode, fileName, installedRows, splitEntries } from "./localModelState";
+import {
+  LOW_MEMORY_WARNING,
+  describeLocalError,
+  diskSize,
+  displayName,
+  errorCode,
+  fileName,
+  installedRows,
+  splitEntries,
+} from "./localModelState";
 import "../../styles/engines.css";
 import "../../styles/local-models.css";
 import { t, translateIfKnown, useT } from "../../i18n";
@@ -307,6 +316,7 @@ export function LocalModelCard({
       (model) => model.process === process && ATTENTION_OUTCOMES.has(load.list.adoption?.outcomes[model.id] ?? ""),
     );
   const entries = load.status === "ready" ? splitEntries(load.list.models, process) : null;
+  const lowMemory = load.status === "ready" && (load.list.recommendations[process]?.warnings.includes(LOW_MEMORY_WARNING) ?? false);
   const context: RowContext | null = load.status === "ready" ? {
     process,
     models: load.list.models.filter((model) => model.process === process),
@@ -370,6 +380,12 @@ export function LocalModelCard({
             {recognizing || job?.type === "adopt" ? t("engines:local.adoption.recognizing") : null}
           </div>
           {adoptionAttention && <p className="settings-help">{t("engines:local.adoption.attention")}</p>}
+          {lowMemory && (
+            <p className="settings-help">
+              {t("engines:local.warnings.low_memory_slow")}
+              {process === "summary" && ` ${t("engines:local.lowMemorySummary")}`}
+            </p>
+          )}
 
           {rows.length > 0 ? (
             <section className="engines-local-section" aria-label={t("engines:local.modelsTitle")}>

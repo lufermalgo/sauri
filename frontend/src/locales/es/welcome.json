@@ -7,6 +7,7 @@
     "intro": "Sauri elige e instala solo los modelos que mejor funcionan en este Mac. Se descargan una vez y después todo se procesa aquí, sin enviar nada fuera.",
     "later": "Si más adelante quieres otro modelo, puedes cambiarlo en Ajustes › Motores y modelos.",
     "preparing": "Preparando la instalación…",
+    "lowMemory": "Este Mac tiene menos de 16 GB de memoria. Sauri funciona, pero procesar una reunión tarda más y, mientras trabaja, el Mac puede ir más lento, sobre todo con muchas apps abiertas. Recomendamos 16 GB o más; también puedes enviar los resúmenes a un servicio externo desde Ajustes › Motores y modelos.",
     "waiting": "Terminando de revisar lo que ya está instalado…",
     "estimate": "Unos {{size}} en total. Puede tardar unos minutos según tu conexión.",
     "installing": "Instalando {{what}} ({{n}} de {{count}})",

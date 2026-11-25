@@ -268,3 +268,47 @@ def test_single_budget_covers_gateway_cold_start(
     assert gateway.request_seconds == 240.5
     assert gateway.startup_seconds == 120
     assert client.timeout_seconds == gateway.startup_seconds + gateway.request_seconds + 5
+
+
+def test_a_low_memory_mac_frees_the_model_seconds_after_the_summary(
+    native: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SAURI_LOW_MEMORY", "1")
+    low = native.LlamaServer()
+    assert low.low_memory is True and low.idle_seconds == native.LOW_MEMORY_IDLE_SECONDS <= 10
+    monkeypatch.setenv("SAURI_LOW_MEMORY", "0")
+    normal = native.LlamaServer()
+    assert normal.low_memory is False and normal.idle_seconds == native.IDLE_SECONDS == 120
+
+
+def test_a_low_memory_mac_keeps_the_full_context_with_lighter_buffers(
+    native: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def args(value: str) -> list[str]:
+        monkeypatch.setenv("SAURI_LOW_MEMORY", value)
+        return list(native.LlamaServer().launch_args(Path("/models/m.gguf"), "alias", 8004))
+
+    normal, low = args("0"), args("1")
+    assert low[: len(normal)] == normal  # same model, context, cache types and output settings
+    assert low[low.index("-c") + 1] == normal[normal.index("-c") + 1] == "32768"
+    assert low[len(normal):] == ["-ub", "256"]
+    assert "-ub" not in normal
+
+
+async def test_low_memory_gateway_stops_llama_after_its_short_grace(
+    native: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    native.server.low_memory = True
+    native.server.idle_seconds = 0.3
+    body = {"model": "synthetic", "messages": [{"role": "user", "content": "synthetic"}]}
+    auth = {"Authorization": "Bearer synthetic-token"}
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=native.app), base_url="http://test") as client:
+        assert (await client.post("/v1/chat/completions", json=body, headers=auth)).status_code == 200
+        first = native.server.process
+        # A second request inside the grace reuses the running server (a test, then the summary).
+        assert (await client.post("/v1/chat/completions", json=body, headers=auth)).status_code == 200
+        assert native.server.process is first
+        async with asyncio.timeout(3):
+            while native.server.process is not None:
+                await asyncio.sleep(0.02)
+    assert first.returncode is not None
