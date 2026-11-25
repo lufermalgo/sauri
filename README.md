@@ -71,4 +71,4 @@ docs/               documentation, indexed in docs/README.md
 
 ## License
 
-To be defined.
+Apache License 2.0: see [LICENSE](LICENSE) and [NOTICE](NOTICE). Third-party components keep their own licenses ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).

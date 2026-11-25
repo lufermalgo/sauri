@@ -2,6 +2,7 @@
   "name": "@sauri/desktop",
   "version": "0.2.3",
   "private": true,
+  "license": "Apache-2.0",
   "description": "Sauri desktop app: starts and supervises the local core and engines, and runs first-run setup.",
   "type": "module",
   "main": "dist/main.js",

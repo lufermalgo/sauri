@@ -65,11 +65,11 @@ Para firmar el instalador, el servicio barato de Microsoft (Artifact Signing) no
 - **Máquinas_de_CI**: las máquinas Windows y Linux que GitHub Actions aloja (sin GPU), donde se construyen los paquetes y corren las pruebas automáticas.
 - **Probador_con_NVIDIA**: el compañero del dueño que prueba las versiones de Windows en su PC con tarjeta NVIDIA antes de publicarlas.
 - **Conjunto_de_Referencia**: las grabaciones que se usan para comparar calidad entre plataformas, con hablantes conocidos:
-  - CharlaSupplyChain_1: 4 personas.
-  - Kelyn: 2 personas.
-  - Nutresa-Pozuelo: 4 grupos.
-  - Las dos de Argos Centroamérica: 2 personas cada una.
-  - ArgosOKRs.
+  - grabación B: 4 personas.
+  - grabación F: 2 personas.
+  - grabación G: 4 grupos.
+  - Las dos del cliente C: 2 personas cada una.
+  - grabación A.
   - La grabación corta de una persona del 19/11/2026.
 
   Viven en la carpeta privada del dueño y nunca entran al repositorio ni a las Máquinas_de_CI.

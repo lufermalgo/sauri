@@ -88,7 +88,8 @@ La extensión obtiene el token con `POST /api/v1/local/pair`, que solo responde 
 - Se conserva solo la última copia.
 - *Rechazado:* `pg_dump` como copia, porque es más lento de restaurar y no es idéntico byte a byte. *Rechazado:* migrar después del cambio, porque dejaría una app nueva sin datos utilizables y sin vuelta atrás.
 
-**D13. Lugar_de_Descarga: un repositorio público de GitHub dedicado** (nombre propuesto `lufermalgo/sauri-app`). Pendiente de confirmación del dueño.
+**D13. Lugar_de_Descarga: un repositorio público de GitHub dedicado** (`lufermalgo/sauri-app`, aprobado por el dueño el 18-11-2026).
+- *Actualización 25-11-2026:* el dueño decidió dejar el proyecto en un solo repositorio público, `lufermalgo/sauri`. Desde la versión que trae ese cambio, la app busca actualizaciones y componentes allí. `sauri-app` se elimina; las instalaciones hasta la 0.2.3 se actualizan a mano una vez. Plan y orden de pasos en `docs/operations/single-public-repo.md`.
 - GitHub Pages sirve la landing y la política de privacidad. Releases sirve el `.dmg`, el `.zip`, los `.sha256` y los Componentes_Descargables.
 - Es gratis y no expone el repositorio privado. El código que va dentro del paquete sí queda legible para quien lo abra, como en cualquier app de escritorio sin ofuscar. Eso forma parte de la decisión del dueño.
 - **Cada publicación de una versión es contenido público y necesita el OK expreso del dueño.** La autorización permanente no la cubre.
