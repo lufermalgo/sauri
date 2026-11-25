@@ -100,8 +100,8 @@ describe("aboutView", () => {
 
   it("links to the public repository", () => {
     const view = aboutView("en", INPUT);
-    expect(view.repository.url).toBe("https://github.com/lufermalgo/sauri-app");
-    expect(view.repository.text).toBe("github.com/lufermalgo/sauri-app");
+    expect(view.repository.url).toBe("https://github.com/lufermalgo/sauri");
+    expect(view.repository.text).toBe("github.com/lufermalgo/sauri");
     expect(isRepositoryUrl(view.repository.url)).toBe(true);
   });
 });
@@ -133,15 +133,15 @@ describe("isRepositoryUrl", () => {
     expect(isRepositoryUrl(REPOSITORY_URL)).toBe(true);
     expect(isRepositoryUrl(`${REPOSITORY_URL}/`)).toBe(true);
     for (const url of [
-      "http://github.com/lufermalgo/sauri-app",
-      "https://github.com/lufermalgo/sauri-app/issues",
-      "https://github.com/lufermalgo/sauri",
-      "https://github.com.evil.example/lufermalgo/sauri-app",
-      "https://evil.example/https://github.com/lufermalgo/sauri-app",
-      "https://user:pass@github.com/lufermalgo/sauri-app",
-      "https://github.com:8443/lufermalgo/sauri-app",
-      "https://github.com/lufermalgo/sauri-app?x=1",
-      "https://github.com/lufermalgo/sauri-app#readme",
+      "http://github.com/lufermalgo/sauri",
+      "https://github.com/lufermalgo/sauri/issues",
+      "https://github.com/lufermalgo/sauri-app",
+      "https://github.com.evil.example/lufermalgo/sauri",
+      "https://evil.example/https://github.com/lufermalgo/sauri",
+      "https://user:pass@github.com/lufermalgo/sauri",
+      "https://github.com:8443/lufermalgo/sauri",
+      "https://github.com/lufermalgo/sauri?x=1",
+      "https://github.com/lufermalgo/sauri#readme",
       "file:///etc/passwd",
       "javascript:alert(1)",
       "not a url",

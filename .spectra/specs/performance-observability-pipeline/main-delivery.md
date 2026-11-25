@@ -77,7 +77,7 @@ Revisión acotada: mismos archivos funcionales que #908/stack previamente aproba
 
 **Política vigente aprobada por Fer 13/11/2026 17:55:** GitHub Actions desactivado y reemplazado por validación local obligatoria antes de cada merge: pruebas, tipos, compilación y seguridad pertinentes, con evidencia del SHA exacto y baseline global explícito. Ansel aplicó `actions/permissions enabled=false`; GET confirmado también por Nahuel. No se espera pago, aumento de límites ni runner permanente. Los jobs fallidos del run histórico `43521042915` no se vuelven verdes: su facturación explica el estado anterior, **no un bloqueo pendiente**. El inventario de controles de `.github/workflows/ci.yml` y sus equivalentes locales debe completarse antes de integrar; no alcanza con omitir checks. Ansel revisa e integra respetando esta sustitución aprobada.
 
-**Corrección de cierre de Fer 18:02:** #912 es un candidato técnico, no evidencia de rendimiento total. La tarea permanece abierta hasta recorrido completo real del original Jose-Maria, medición por etapa/espera/recursos/total, corrección del cuello dominante y repetición comparable. La repetición sintética descrita arriba no acredita ese objetivo.
+**Corrección de cierre de Fer 18:02:** #912 es un candidato técnico, no evidencia de rendimiento total. La tarea permanece abierta hasta recorrido completo real del original de la grabación E, medición por etapa/espera/recursos/total, corrección del cuello dominante y repetición comparable. La repetición sintética descrita arriba no acredita ese objetivo.
 
 Publicación, SHA definitivo, PR, comprobación del diff y limpieza de recursos se registran en `evidence.md` al completar la entrega. Esta documentación no convierte el merge de #908 a QA en un merge a main.
 

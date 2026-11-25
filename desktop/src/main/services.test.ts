@@ -227,7 +227,7 @@ describe("engines", () => {
         SAURI_RELEASES_BASE_URL: "http://127.0.0.1:18999",
       });
       delete process.env.SAURI_RELEASES_REPO;
-      expect(engineEnv(ctx, "host").SAURI_RELEASES_REPO).toBe("lufermalgo/sauri-app");
+      expect(engineEnv(ctx, "host").SAURI_RELEASES_REPO).toBe("lufermalgo/sauri");
       process.env.SAURI_RELEASES_REPO = "";
       expect(engineEnv(ctx, "host").SAURI_RELEASES_REPO).toBe("");
       expect(engineEnv(ctx, "asr").SAURI_COMPONENTS_DIR).toBeUndefined();

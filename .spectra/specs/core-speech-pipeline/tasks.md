@@ -4,7 +4,7 @@
 
 Ejecución por unidades de entrega (U1–U8). Cada unidad tiene su issue, su rama y su worktree desde `origin/main`, la implementa Codex con el protocolo de `~/Proyectos/sauri-orchestration/` y la valida, publica e integra el orquestador (Claude). Una unidad se cierra solo con: pruebas del backend/portal pertinentes en verde, `ruff` y `mypy` de los archivos tocados sin diagnósticos nuevos, `npm run typecheck` si toca TypeScript, diff revisado, PR integrado. Documentación terminada no es implementación ni aceptación de producto; la aceptación es del dueño tras U8.
 
-Evidencia de origen (rutas privadas, no se copian al repo): `~/Proyectos/APX/evidence/codex-pipeline-argos-20261114/{pipeline.py,pipeline_steps.py,optimization/report.md}`, `codex-coreml-20261114/{report.md,script-final.py}`, `codex-speaker-evaluation` (`_tools/benchmark_coreml.py`, rama archivada del experimento; no existe en el repositorio). Codex las usa solo como referencia de invocación.
+Evidencia de origen (rutas privadas, no se copian al repo): `~/Proyectos/APX/evidence/codex-pipeline-20261114/{pipeline.py,pipeline_steps.py,optimization/report.md}`, `codex-coreml-20261114/{report.md,script-final.py}`, `codex-speaker-evaluation` (`_tools/benchmark_coreml.py`, rama archivada del experimento; no existe en el repositorio). Codex las usa solo como referencia de invocación.
 
 ## Resumen de Fases
 

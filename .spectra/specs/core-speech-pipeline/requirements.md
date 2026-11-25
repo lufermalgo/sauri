@@ -5,9 +5,9 @@
 Sauri tiene puertos para sus motores (`ASREngine`, `DiarizationEngine`, `JobQueue`, `ObjectStore`) y servicios de motor HTTP separados (`backend/asr-engine`, `backend/diar-engine`), pero el recorrido real worker → motor nativo → transcripción nunca se demostró de extremo a extremo (`docs/architecture/overview.md`). Los motores nativos actuales (Whisper Turbo sobre MLX, pyannote 3.1 sobre MPS) fueron lentos e inestables por memoria: pyannote tardó entre 8 y 15 minutos solo en diarizar reuniones de 70–98 minutos. El idioma está fijado a `es-CO` (`backend/app/transcription/worker.py:139`), la transcripción no tiene marcas por palabra y cada segmento se asigna entero a un único hablante, lo que pierde cambios de hablante dentro de un segmento. El resumen recibe texto sin hablantes y está acoplado a Ollama. El portal no permite subir una grabación y ver su resultado completo.
 
 Entre el 13 y el 14/11/2026 Codex evaluó alternativas en el Mac del dueño (Apple M3, 24 GiB), fuera de Sauri, y recomendó priorizando precisión: **Senko** para hablantes, **Whisper large-v3-turbo** (whisper.cpp, Metal) para transcripción y **Qwen3.5-9B** local para el resumen como borrador revisable. Evidencia en `~/Proyectos/APX/evidence/codex-*` (informes `report.md`; audios y transcripciones son privados y no se copian al repositorio):
-- Senko (CoreML) diarizó 60 min en ~19 s y 98 min en ~31 s de extremo a extremo, detectó los 4 hablantes confirmados por el dueño en SupplyChain y conservó al hablante breve. Su salida suavizada descarta turnos ≤ 0,78 s.
+- Senko (CoreML) diarizó 60 min en ~19 s y 98 min en ~31 s de extremo a extremo, detectó los 4 hablantes confirmados por el dueño en grabación B y conservó al hablante breve. Su salida suavizada descarta turnos ≤ 0,78 s.
 - whisper.cpp `large-v3-turbo` GGML Q5_0 en Metal transcribió 60 min en 5 min 47 s de cómputo activo; emitió marcas de palabra invertidas (39 en 9 min).
-- Con Senko + Whisper, 8,69 % de las palabras de ArgosOKRs quedaron sin hablante.
+- Con Senko + Whisper, 8,69 % de las palabras de grabación A quedaron sin hablante.
 - Ningún resumen local fue fiel sin revisión: el resumen se entrega como borrador con citas.
 - El Mac entró en suspensión durante una transcripción y triplicó la espera; cargas de GPU concurrentes abortaron corridas.
 
@@ -80,7 +80,7 @@ El dueño decidió el 14/11/2026 **implementar esa recomendación sin nuevas pru
 1. THE Core_de_Voz SHALL asignar hablante a cada Palabra_Atribuida por intersección temporal con los segmentos de diarización y construir los turnos agrupando palabras consecutivas del mismo hablante.
 2. WHEN una palabra tenga marcas invertidas o fuera de la duración, THE Core_de_Voz SHALL corregirlas con una regla determinista documentada o marcarlas `sin_asignar`, SHALL NOT inventar tiempos y SHALL contarlas.
 3. IF una palabra intersecta dos hablantes sin un ganador claro, THEN THE Core_de_Voz SHALL marcarla `ambigua` y conservar ambos candidatos.
-4. WHEN una palabra no intersecte ningún segmento, THE Core_de_Voz SHALL asignarle el hablante del segmento más cercano dentro de 500 ms o marcarla `sin_asignar`; sobre ArgosOKRs SHALL quedar `sin_asignar` menos del 3 % de las palabras (línea base 8,69 %).
+4. WHEN una palabra no intersecte ningún segmento, THE Core_de_Voz SHALL asignarle el hablante del segmento más cercano dentro de 500 ms o marcarla `sin_asignar`; sobre grabación A SHALL quedar `sin_asignar` menos del 3 % de las palabras (línea base 8,69 %).
 5. THE Core_de_Voz SHALL conservar todo el texto de la transcripción; la atribución SHALL NOT eliminar palabras.
 6. WHEN un hablante tenga al menos 5 s de voz en la diarización, THE Core_de_Voz SHALL mostrarlo en la transcripción atribuida.
 

@@ -42,7 +42,7 @@ Notas.
 
 1. La meta es de 7 min para una grabación de 60 min. La única reunión de al menos 60 min (`734d4887`) tardó 14,2 min; su equivalente lineal a 60 min (9,0 min) supera la meta. La reunión de 55,3 min tardó 6,3 min, dentro de 7, pero no alcanza los 60 min que exige el recorrido (Requisito 8.4) y su extrapolación a 60 min (6,9 min) queda al límite. La corrida de 94 min es más lenta por minuto de audio (9,0 s/min frente a 6,9 s/min); la BD no explica por qué y no se investigó. No se registraron las Condiciones_de_Referencia, así que no se puede descartar carga concurrente. Esta meta queda **abierta**: falta una corrida de ≥ 60 min en condiciones controladas y con registro de memoria.
 2. El conteo sale de la diarización guardada. El texto de este registro no afirma que sea el número real de personas; la spec exige tratarlos como voces, no identidades.
-3. La meta de 3 % se definió sobre ArgosOKRs (línea base 8,69 %); aquí se comparó con grabaciones distintas, ambas muy por debajo. La corrida M1 del 14-11 (54,2 min, 4 hablantes) dio 0,25 % de palabras sin asignar y diarización de 14 s, coherente con `850b696a`.
+3. La meta de 3 % se definió sobre grabación A (línea base 8,69 %); aquí se comparó con grabaciones distintas, ambas muy por debajo. La corrida M1 del 14-11 (54,2 min, 4 hablantes) dio 0,25 % de palabras sin asignar y diarización de 14 s, coherente con `850b696a`.
 
 ## Otras mediciones y hallazgos
 
@@ -51,7 +51,7 @@ Notas.
 - Calidad del ASR: #1010 registra que en `734d4887` los primeros 1:36 salen sin puntuación ni mayúsculas y desde 1:41 la puntuación es normal (unas 20 marcas por minuto). Sigue abierto; se investigará con audio real. Los tiempos por palabra no se ven afectados según ese informe. M1 había mostrado pérdida de puntuación después del minuto 20, que el prompt inicial predeterminado (#1024/#1026) mitiga: su repetición sobre el archivo completo de 94 min no está verificada en este registro.
 - WER y DER no se midieron (no hay referencia humana; M2).
 - Fallos observados: M1 anotó tres subidas iniciales con `engine_failed` en unos 2,5 s que se resolvieron al reiniciar los motores; la causa raíz no se encontró. En las dos reuniones medidas aquí no hubo fallos.
-- Evaluación previa de Codex (M2, fuera de Sauri, 98 min con 4 hablantes confirmados por el dueño): Senko 11,1 s de inferencia (~31 s de punta a punta); whisper.cpp `large-v3-turbo` Q5_0 en 60 min (ArgosOKRs): 5:47. Esas cifras son de referencia, no de Sauri integrado.
+- Evaluación previa de Codex (M2, fuera de Sauri, 98 min con 4 hablantes confirmados por el dueño): Senko 11,1 s de inferencia (~31 s de punta a punta); whisper.cpp `large-v3-turbo` Q5_0 en 60 min (grabación A): 5:47. Esas cifras son de referencia, no de Sauri integrado.
 
 ## Criterios de completado de U8.1
 
