@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability / Reportar una vulnerabilidad
+    url: https://github.com/lufermalgo/sauri/security/policy
+    about: Report security problems privately, never in a public issue. / Reporta los problemas de seguridad en privado, nunca en un issue público.
+  - name: Install help (Spanish) / Ayuda para instalar
+    url: https://lufermalgo.github.io/sauri/#instalar
+    about: How to open the app the first time on macOS. / Cómo abrir la app la primera vez en macOS.

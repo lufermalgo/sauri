@@ -1,0 +1,76 @@
+name: Bug report / Reportar un error
+description: Something in Sauri does not work as expected. / Algo en Sauri no funciona como esperabas.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. / Gracias por reportar el error.
+
+        **Privacy / Privacidad:** do NOT attach real meeting recordings, transcripts, summaries or screenshots of real meetings. Describe the content instead, or reproduce the problem with a test recording. / NO adjuntes grabaciones, transcripciones, resúmenes ni capturas de reuniones reales. Describe el contenido o reproduce el error con una grabación de prueba.
+
+        Security problems go through [private vulnerability reporting](https://github.com/lufermalgo/sauri/security/advisories/new), not here. / Los problemas de seguridad se reportan en privado, no aquí.
+  - type: input
+    id: version
+    attributes:
+      label: Sauri version / Versión de Sauri
+      description: Menu bar icon › About Sauri. / Ícono de la barra de menús › Acerca de Sauri.
+      placeholder: "0.2.4"
+    validations:
+      required: true
+  - type: input
+    id: extension-version
+    attributes:
+      label: Extension version / Versión de la extensión
+      description: Only if the problem involves recording from Chrome (chrome://extensions). / Solo si el error tiene que ver con grabar desde Chrome.
+      placeholder: "0.9.2"
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version / Versión de macOS
+      description: Apple menu › About This Mac. / Menú Apple › Acerca de esta Mac.
+      placeholder: "macOS 15.5"
+    validations:
+      required: true
+  - type: input
+    id: mac
+    attributes:
+      label: Mac model and memory / Modelo de Mac y memoria
+      placeholder: "MacBook Air M3, 16 GB"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce / Pasos para reproducirlo
+      placeholder: |
+        1. Open ...
+        2. Click ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior / Qué esperabas
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior / Qué pasó
+      description: Include the exact error message if there is one. / Incluye el mensaje de error exacto si lo hay.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / Registros
+      description: |
+        Menu bar icon › Open logs, or `~/Library/Logs/Sauri/`. Paste only the relevant lines and read them first: remove names, meeting titles or any text from your meetings. / Ícono de la barra de menús › Abrir registros, o `~/Library/Logs/Sauri/`. Pega solo las líneas relevantes y revísalas antes: quita nombres, títulos de reuniones o texto de tus reuniones.
+      render: text
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else / Algo más
+      description: Recording length, language, external providers in use, screenshots without real meeting content. / Duración de la grabación, idioma, proveedores externos activos, capturas sin contenido de reuniones reales.

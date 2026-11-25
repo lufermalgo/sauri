@@ -1,0 +1,48 @@
+name: Feature request / Proponer una mejora
+description: Suggest an idea or an improvement for Sauri. / Sugiere una idea o una mejora para Sauri.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. Please search existing issues first. / Gracias por la idea. Revisa antes si ya existe un issue parecido.
+
+        Do not include real meeting content in examples. / No incluyas contenido de reuniones reales en los ejemplos.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / Problema
+      description: What are you trying to do, and what gets in the way? / Qué intentas hacer y qué te lo impide.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution / Solución propuesta
+      description: How would you like Sauri to behave? / Cómo te gustaría que funcionara Sauri.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives / Alternativas
+      description: Other approaches or workarounds you considered. / Otras opciones o atajos que consideraste.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area / Área
+      multiple: true
+      options:
+        - Desktop app / App de escritorio
+        - Chrome extension / Extensión de Chrome
+        - Transcription / Transcripción
+        - Speakers / Hablantes
+        - Summaries / Resúmenes
+        - Portal (library, meeting view) / Portal (biblioteca, reunión)
+        - Other / Otra
+  - type: checkboxes
+    id: local-first
+    attributes:
+      label: Local-first / Local primero
+      options:
+        - label: This idea keeps meeting data on the Mac, or makes any data leaving it opt-in. / Esta idea mantiene los datos en el Mac, o hace opcional cualquier envío fuera de él.
