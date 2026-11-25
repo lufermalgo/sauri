@@ -35,7 +35,8 @@ def test_regex_terms_and_allow_lines() -> None:
 
 
 def test_real_user_paths_are_reported_but_placeholders_are_not() -> None:
-    assert scan("/Users/jdoe/Projects/x") == ["absolute path of a real user (/Users/jdoe); use ~/ or a placeholder"]
+    real = "/Users/" + "jdoe"  # built at run time so the gate does not flag this test file
+    assert scan(real + "/Projects/x") == [f"absolute path of a real user ({real}); use ~/ or a placeholder"]
     assert scan("/Users/test/Recordings and /Volumes/External") == []
 
 
