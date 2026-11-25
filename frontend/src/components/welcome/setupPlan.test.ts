@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { actionFor, pendingItems, recommendedChoices } from "./setupPlan";
+import { actionFor, isLowMemory, pendingItems, recommendedChoices } from "./setupPlan";
 import { DIAR, LARGE_LLM, PARAKEET, SMALL_LLM, VAD, WHISPER, desktopListing, localProcess, withInstalled } from "./welcomeFixtures";
 
 const ALL = [PARAKEET, WHISPER, VAD, SMALL_LLM, LARGE_LLM, DIAR];
 const processes = () => [localProcess("transcription"), localProcess("diarization"), localProcess("summary")];
 
 describe("setup plan", () => {
+  it("reads the low-memory warning the host puts on an 8 GB Mac only", () => {
+    expect(isLowMemory(desktopListing(8))).toBe(true);
+    expect(isLowMemory(desktopListing(16))).toBe(false);
+    expect(isLowMemory(desktopListing(24))).toBe(false);
+  });
+
   it.each([
     [8, [PARAKEET, SMALL_LLM, DIAR], 632_314_500 + 2_740_937_888 + 251_532_143],
     [16, [PARAKEET, LARGE_LLM, DIAR], 632_314_500 + 5_680_522_464 + 251_532_143],

@@ -143,6 +143,22 @@ describe("WelcomeView", () => {
     expect(host.calls).toContain("PUT /api/v1/engines/processes/summary");
   });
 
+  it("tells an 8 GB Mac plainly that processing is slower, and says nothing on 16 GB", async () => {
+    const small: Host = { calls: [], paired: [false], memory: 8 };
+    stubHost(small);
+    render(<WelcomeView onFinished={vi.fn()} pollIntervalMs={POLL_MS} />);
+    expect(await screen.findByText(t("welcome:models.lowMemory"))).toBeInTheDocument();
+    expect(await screen.findByText(t("welcome:models.ready"))).toBeInTheDocument();
+    expect(screen.getByText(t("welcome:models.lowMemory"))).toBeInTheDocument();
+    cleanup();
+
+    const large: Host = { calls: [], paired: [false] };
+    stubHost(large);
+    render(<WelcomeView onFinished={vi.fn()} pollIntervalMs={POLL_MS} />);
+    expect(await screen.findByText(t("welcome:models.ready"))).toBeInTheDocument();
+    expect(screen.queryByText(t("welcome:models.lowMemory"))).toBeNull();
+  });
+
   it("keeps Whisper and its voice detector on a Mac installed before, and installs only what is missing", async () => {
     const host: Host = { calls: [], paired: [false], preinstalled: [PARAKEET, WHISPER, VAD] };
     const installed = stubHost(host);

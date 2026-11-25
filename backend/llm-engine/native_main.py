@@ -28,6 +28,7 @@ from sauri_engine_common.external.errors import ProviderError
 from sauri_engine_common.external.safe_http import SafeHttp
 from sauri_engine_common.keep_awake import KeepAwake, KeepAwakeError
 from sauri_engine_common.local_model_use import LocalModelError, LocalSelection, select_local_model
+from sauri_engine_common.memory import low_memory_mode
 from sauri_engine_common.offered_providers import LOCAL_SERVER_KINDS, OfferedMatrix
 from sauri_engine_common.route import LOCAL_KIND, ROUTE_HEADER, Route, RouteError, decode_route, validate_route
 from sauri_engine_common.secrets import SecretError, SecretRecord, SecretStore, default_secret_store
@@ -58,6 +59,15 @@ ERROR_STATUS: Final = {
 }
 DEFAULT_ERROR_STATUS: Final = 502
 DEFAULT_LLAMA_PORT: Final = 8004
+# How long llama-server stays loaded after its last request. On a low-memory Mac (below 16 GiB) the model leaves
+# memory a few seconds after the summary instead of two minutes later: a summary is one request, and the grace
+# still covers a connection test followed by a summary.
+IDLE_SECONDS: Final = 120.0
+LOW_MEMORY_IDLE_SECONDS: Final = 5.0
+# Low-memory Macs keep the full 32k context (a long meeting is one request and needs it) but process the prompt in
+# steps of 256 tokens instead of 512: the compute buffer halves (490 -> 245 MiB on Metal, 74 -> 37 MiB on the CPU)
+# at the same speed. Measured with the 4B on a 20k-token prompt, see issue #1274 and its PR.
+LOW_MEMORY_LLAMA_ARGS: Final = ("-ub", "256")
 
 
 def llama_port() -> int:
@@ -89,7 +99,8 @@ class LlamaServer:
         self.model = Path(os.getenv("SAURI_LLM_MODEL_FILE", INSTALL_DIR / "models/Qwen3.5-9B-Q4_K_M.gguf"))
         # The desktop app derives this port from its block; 8004 is the development stack's.
         self.url = f"http://127.0.0.1:{llama_port()}"
-        self.idle_seconds = 120.0
+        self.low_memory = low_memory_mode()
+        self.idle_seconds = LOW_MEMORY_IDLE_SECONDS if self.low_memory else IDLE_SECONDS
         self.startup_seconds = 120.0
         self.request_seconds = float(os.getenv("SUMMARIZATION_TIMEOUT_SECONDS", "1500"))
         if not math.isfinite(self.request_seconds) or self.request_seconds <= 0:
@@ -118,6 +129,15 @@ class LlamaServer:
         self.process = None
         self.loaded_model = None
 
+    def launch_args(self, model: Path, alias: str, port: int) -> list[str]:
+        """llama-server's command line; a low-memory Mac adds the lighter buffers (same context, same output)."""
+        return [
+            str(self.binary), "-m", str(model), "-c", "32768", "-ctk", "q8_0", "-ctv", "q8_0",
+            "--host", "127.0.0.1", "--port", str(port), "--parallel", "1", "--alias", alias,
+            "--reasoning-budget", "0", "--no-context-shift",
+            *(LOW_MEMORY_LLAMA_ARGS if self.low_memory else ()),
+        ]
+
     async def start(self, client: httpx.AsyncClient, selection: LocalSelection | None = None) -> None:
         """Start llama-server with the chosen model, restarting it when a different one is running.
 
@@ -138,9 +158,7 @@ class LlamaServer:
             except OSError:
                 raise HTTPException(status_code=503, detail="llm_port_busy") from None
         self.process = await asyncio.create_subprocess_exec(
-            str(self.binary), "-m", str(model), "-c", "32768", "-ctk", "q8_0", "-ctv", "q8_0",
-            "--host", "127.0.0.1", "--port", str(port), "--parallel", "1", "--alias", alias,
-            "--reasoning-budget", "0", "--no-context-shift",
+            *self.launch_args(model, alias, port),
             stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL, start_new_session=True,
         )
         self.loaded_model = model

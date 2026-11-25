@@ -32,7 +32,18 @@ def test_8_gib_apple_silicon() -> None:
     summary = result["summary"]
     assert summary.reason_key == "reduced" and summary.status == "proposal"
     assert summary.reason_params["better_id"] == "qwen3.5-9b-q4_k_m" and summary.reason_params["limited_by"] == "memory"
-    assert set(summary.warnings) == {"unmeasured_proposal", "lower_quality_expected", "suggest_external_provider"}
+    assert set(summary.warnings) == {
+        "unmeasured_proposal", "lower_quality_expected", "suggest_external_provider", "low_memory_slow",
+    }
+
+
+def test_below_16_gib_every_process_warns_that_processing_is_slower() -> None:
+    for memory in (4, 8, 15.9):
+        for recommendation in recommend(hardware(memory), CATALOG).values():
+            assert "low_memory_slow" in recommendation.warnings
+    for memory in (0, 16, 24):
+        for recommendation in recommend(hardware(memory), CATALOG).values():
+            assert "low_memory_slow" not in recommendation.warnings
 
 
 def test_an_older_macos_gets_whisper_and_is_not_told_it_is_reduced() -> None:

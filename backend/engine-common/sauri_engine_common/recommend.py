@@ -21,7 +21,8 @@ Examples (Apple silicon, Metal available):
 
 * 8 GiB: transcription -> Parakeet ultra (fits); summary -> 4B (``reduced``; warnings
   ``unmeasured_proposal``, ``lower_quality_expected``, ``suggest_external_provider``);
-  diarization -> Senko.
+  diarization -> Senko. Below 16 GiB every process also carries ``low_memory_slow`` (Sauri works, but
+  processing is slower and can slow the Mac down).
 * 16 GiB: transcription -> Parakeet ultra; summary -> 9B (fits); diarization -> Senko.
 * 24 GiB: same as 16 GiB (the catalog has nothing larger than the 9B).
 
@@ -44,6 +45,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final, Literal, cast
 
+from sauri_engine_common.memory import is_low_memory
 from sauri_engine_common.model_bundle import MAX_BUNDLE_FILES, BundleFile, bundle_digest, bundle_size, safe_relative
 
 Process = Literal["transcription", "summary", "diarization"]
@@ -305,6 +307,11 @@ def _blocker(model: CatalogModel, hardware: HardwareProfile) -> str | None:
     return None
 
 
+def _memory_warning(hardware: HardwareProfile) -> tuple[str, ...]:
+    """``low_memory_slow`` on a Mac below 16 GiB: it works, but processing is slower and can slow the Mac down."""
+    return ("low_memory_slow",) if is_low_memory(hardware.memory_gib) else ()
+
+
 def _recommend_process(process: Process, hardware: HardwareProfile, models: Iterable[CatalogModel]) -> Recommendation:
     models = list(models)
     dependencies = {model.needs for model in models if model.needs}
@@ -328,7 +335,7 @@ def _recommend_process(process: Process, hardware: HardwareProfile, models: Iter
         params["needs"] = next(iter(blockers)) if len(blockers) == 1 else "memory"
         params["min_ram_gib"] = min(model.min_ram_gib for model in candidates)
         advice = ("suggest_external_provider",) if process == "summary" else ()
-        return Recommendation(process, None, None, "no_local_model", params, advice)
+        return Recommendation(process, None, None, "no_local_model", params, advice + _memory_warning(hardware))
     chosen = eligible[0]
     params["min_ram_gib"] = chosen.min_ram_gib
     warnings: list[str] = []
@@ -347,6 +354,7 @@ def _recommend_process(process: Process, hardware: HardwareProfile, models: Iter
             warnings.append("suggest_external_provider")
     if process == "transcription" and not hardware.metal:
         warnings.append("no_metal_slow")
+    warnings.extend(_memory_warning(hardware))
     return Recommendation(process, chosen.id, chosen.status, reason, params, tuple(warnings))
 
 

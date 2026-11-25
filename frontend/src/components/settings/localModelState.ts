@@ -4,6 +4,9 @@ import { EnginesApiError } from "../../api";
 import { t, translateIfKnown } from "../../i18n";
 import { availabilityOf, formatBytes, formatMemory, processList } from "./engineLabels";
 
+/** The recommendation warning host-engine adds on a Mac below 16 GB: Sauri works, but processing is slower. */
+export const LOW_MEMORY_WARNING = "low_memory_slow";
+
 /** Same factor as the host's disk check (`DISK_HEADROOM_PERCENT`): the file plus 20 % of room. */
 export const DISK_HEADROOM = 1.2;
 /** At most this many suggestions in «Agregar»: the person sees reasonable options, not the catalog. */

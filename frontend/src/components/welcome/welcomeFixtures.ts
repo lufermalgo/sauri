@@ -35,7 +35,9 @@ export function desktopListing(memoryGib: 8 | 16 | 24): LocalModelList {
     entry(DIAR, "diarization", 251_532_143, { kind: "component", default: true }),
   ].map((model) => ({ ...model, recommended: [PARAKEET, summary, DIAR].includes(model.id) }));
   const rec = (process: EngineProcess, model_id: string): LocalRecommendation => ({
-    process, model_id, status: "measured", reason_key: "fits", reason_params: { memory_gib: memoryGib }, warnings: [],
+    process, model_id, status: "measured", reason_key: "fits", reason_params: { memory_gib: memoryGib },
+    // host-engine flags every process below 16 GB (recommend._memory_warning).
+    warnings: memoryGib < 16 ? ["low_memory_slow"] : [],
   });
   return {
     catalog_version: 1,

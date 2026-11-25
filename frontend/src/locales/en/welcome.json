@@ -7,6 +7,7 @@
     "intro": "Sauri picks and installs the models that work best on this Mac on its own. They download once, and from then on everything is processed here, without sending anything out.",
     "later": "If you want a different model later, you can change it in Settings › Engines and models.",
     "preparing": "Getting the installation ready…",
+    "lowMemory": "This Mac has less than 16 GB of memory. Sauri works, but processing a meeting takes longer and the Mac may slow down while it works, especially with many apps open. We recommend 16 GB or more; you can also send summaries to an external service from Settings › Engines and models.",
     "waiting": "Finishing a check of what is already installed…",
     "estimate": "About {{size}} in total. It may take a few minutes depending on your connection.",
     "installing": "Installing {{what}} ({{n}} of {{count}})",
