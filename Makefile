@@ -12,7 +12,7 @@ NATIVE_PYTHON311 ?= python3.11
 ## pero disponible aquí para quien solo trabaje en backend/ sin tocar npm.
 setup-hooks:
 	git config core.hooksPath .githooks
-	@echo "core.hooksPath -> .githooks (ver AGENTS.md: Code changes and Git protection)"
+	@echo "core.hooksPath -> .githooks (ver CONTRIBUTING.md)"
 
 ## Crear un worktree + rama aislados para un spec/issue: make worktree BRANCH=feature/issue-12-desc
 worktree:
@@ -56,7 +56,7 @@ engines-status:
 	SAURI_ASR_ENGINE_PYTHON="$(SAURI_NATIVE_VENV)/bin/python" bash scripts/engines/native-engines.sh status all
 
 ## Escanear todo el repo en busca de identificadores en español (Language_Regression_Check).
-## Ver AGENTS.md para las reglas de idioma del código.
+## Ver CONTRIBUTING.md para las reglas de idioma del código.
 check-english:
 	python3 scripts/dev/check_english_only.py $$(git ls-files 'backend/**' 'extension/src/**' 'frontend/src/**' 'packages/shared-types/**')
 

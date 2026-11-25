@@ -49,3 +49,17 @@ frontend/test-results/
 
 # Landing review screenshots (headless captures, never committed)
 landing/.review/
+
+# Maintainer's private working files: agent rules and settings, specs and internal notes.
+# They live only on the maintainer's Mac; scripts/dev/new-worktree.sh links them into new worktrees.
+/.claude/
+/.agents/
+/.spectra/
+/AGENTS.md
+/CLAUDE.md
+/docs/product/
+/docs/history/
+/docs/operations/
+/docs/design/
+/docs/architecture/overview.md
+/docs/architecture/project-structure.md

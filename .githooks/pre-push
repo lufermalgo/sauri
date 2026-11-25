@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Blocks pushes that would land directly on main. Part of the branch-isolation
-# policy in AGENTS.md (Code changes and Git protection) (server-side branch protection isn't available on the
-# GitHub Free plan for a private repo, so this is the enforcement of record).
+# policy in CONTRIBUTING.md (main is also protected on GitHub).
 #
-# Installed via `core.hooksPath .githooks` (see AGENTS.md / Makefile `make setup`).
+# Installed via `core.hooksPath .githooks` (see CONTRIBUTING.md / Makefile `make setup`).
 # Bypass: `git push --no-verify` (intentional escape hatch, not silent).
 #
 # Git calls this with remote name/URL as args and feeds one line per ref on stdin:

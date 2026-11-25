@@ -110,7 +110,7 @@ services:
       dockerfile: Dockerfile
     command: ["python", "-m", "app.worker"]
     # On SIGTERM the worker stops taking jobs, lets the running one finish for up to
-    # WORKER_SHUTDOWN_GRACE_SECONDS and otherwise gives its claim back (docs/operations/local-deployment.md).
+    # WORKER_SHUTDOWN_GRACE_SECONDS and otherwise gives its claim back.
     # The Docker grace period must stay above that. `init` forwards the signal and reaps ffmpeg children.
     init: true
     stop_signal: SIGTERM

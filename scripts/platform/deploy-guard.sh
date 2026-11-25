@@ -7,7 +7,7 @@
 # still open, summaries still being written, claims whose lease is live, and messages waiting or being
 # handled in the processing queues. Exits 1 with the list when there is work in flight.
 # FORCE=1 skips the check: work in flight is then given back to the queue and resumes after the restart
-# (see "Restarting safely" in docs/operations/local-deployment.md), at the cost of redoing the step.
+# at the cost of redoing the step.
 set -Eeuo pipefail
 
 ACTION="${1:-restart the stack}"

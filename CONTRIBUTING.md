@@ -8,8 +8,7 @@ welcome. By taking part you agree to follow the [Code of Conduct](CODE_OF_CONDUC
 - **Bugs and ideas:** open an issue with the bug or feature form. Search existing
   issues first.
 - **Larger changes:** open an issue to discuss the approach before writing a lot of
-  code. Product scope is tracked in [`docs/product/baseline.md`](docs/product/baseline.md)
-  and specifications in [`.spectra/specs/`](.spectra/specs/) (both mostly in Spanish).
+  code.
 - **Security problems:** report them privately, never in a public issue. See
   [SECURITY.md](SECURITY.md).
 - **Privacy:** never attach real meeting recordings, transcripts, summaries or
@@ -55,9 +54,7 @@ commit it.
 ### Older Docker stack
 
 The repository still contains the earlier Docker Compose development stack
-(`make up`, `make engines-install`, `make engines-up`), documented in Spanish in
-[`docs/operations/local-deployment.md`](docs/operations/local-deployment.md). It is
-being retired in favour of the desktop app; use it only if your change targets it.
+(`make up`, `make engines-install`, `make engines-up`). It is being retired in favour of the desktop app; use it only if your change targets it.
 
 ## Pull requests
 

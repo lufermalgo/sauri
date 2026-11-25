@@ -71,7 +71,7 @@ Chrome extension ──(recording over localhost)──▶ Sauri.app (Electron, 
 - `extension/`: the Chrome extension (Manifest V3).
 - `packages/`: shared TypeScript types.
 
-Models are downloaded on first run and checked against pinned SHA-256 hashes. More detail (in Spanish) in [`docs/architecture/overview.md`](docs/architecture/overview.md) and the desktop design in [`.spectra/specs/mac-desktop-app/design.md`](.spectra/specs/mac-desktop-app/design.md).
+Models are downloaded on first run and checked against pinned SHA-256 hashes.
 
 ## Build from source
 
@@ -102,7 +102,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full list of checks and how to pa
 
 ## Project status
 
-Sauri is young and under active development. The Mac app is usable day to day, but expect rough edges and breaking changes between versions. Windows and Linux are planned, not available. Specifications and their status are in [`.spectra/README.md`](.spectra/README.md).
+Sauri is young and under active development. The Mac app is usable day to day, but expect rough edges and breaking changes between versions. Windows and Linux are planned, not available.
 
 ## Contributing
 

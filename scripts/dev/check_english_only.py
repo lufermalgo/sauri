@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Language_Regression_Check — flags Spanish identifiers in new/modified code.
 
-Enforces the English-only naming convention documented in AGENTS.md.
+Enforces the English-only naming convention documented in CONTRIBUTING.md.
 
 Usage:
     check_english_only.py <path> [<path> ...]
