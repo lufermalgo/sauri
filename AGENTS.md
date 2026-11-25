@@ -1,6 +1,6 @@
 # Sauri
 
-Plataforma interna para grabar sesiones virtuales y ofrecer transcripciones con identificación de hablantes y resumen. Este archivo reúne las reglas para todos los agentes (Claude, Codex y subagentes). `CLAUDE.md` agrega las reglas propias del orquestador.
+Grabador de reuniones local y de código abierto: graba sesiones virtuales y ofrece transcripciones con identificación de hablantes y resumen, procesadas en el Mac. Este archivo reúne las reglas para todos los agentes (Claude, Codex y subagentes). `CLAUDE.md` agrega las reglas propias del orquestador.
 
 ## Quién hace qué
 - **Fer (dueño):** decide producto, privacidad, gastos y seguridad. Acepta el producto al final. Prueba con sus propias grabaciones.

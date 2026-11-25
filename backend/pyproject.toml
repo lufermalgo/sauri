@@ -1,7 +1,7 @@
 [project]
 name = "sauri-backend"
 version = "0.1.0"
-description = "sauri backend – Summan's internal commercial-meeting intelligence platform"
+description = "Sauri backend: local API, worker and engines for an open-source meeting recorder"
 license = "Apache-2.0"
 requires-python = ">=3.11"
 dependencies = [

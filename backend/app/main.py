@@ -59,7 +59,7 @@ def create_app() -> FastAPI:
     docs_url, redoc_url, openapi_url = docs_paths()
     application = FastAPI(
         title="Sauri",
-        description="Summan's internal commercial-meeting intelligence platform",
+        description="Local API for Sauri, an open-source meeting recorder that transcribes and summarizes on the Mac",
         version=API_VERSION,
         lifespan=lifespan,
         docs_url=docs_url,

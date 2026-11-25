@@ -1,40 +1,105 @@
 # Contributing to Sauri
 
-Sauri is in early development. Read `AGENTS.md` for the full working rules (it is written in Spanish); this file is the short version.
+Thanks for your interest in Sauri. Bug reports, ideas and pull requests are all
+welcome. By taking part you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
-## Setup
+## Before you start
+
+- **Bugs and ideas:** open an issue with the bug or feature form. Search existing
+  issues first.
+- **Larger changes:** open an issue to discuss the approach before writing a lot of
+  code. Product scope is tracked in [`docs/product/baseline.md`](docs/product/baseline.md)
+  and specifications in [`.spectra/specs/`](.spectra/specs/) (both mostly in Spanish).
+- **Security problems:** report them privately, never in a public issue. See
+  [SECURITY.md](SECURITY.md).
+- **Privacy:** never attach real meeting recordings, transcripts, summaries or
+  screenshots of real meetings to issues, pull requests or test fixtures. Use
+  synthetic audio and invented content.
+
+## Development setup
+
+You need an Apple silicon Mac with macOS 14 or later, Node.js 20 or later,
+[uv](https://docs.astral.sh/uv/), `cmake`, `pkg-config`, and Swift 6 with the Xcode
+Command Line Tools.
 
 ```bash
-make setup-hooks        # git hooks that block direct commits to main (also run by npm ci)
-npm ci                  # JavaScript workspaces: extension, frontend, packages/*
-make up                 # Docker stack: API, worker, portal, PostgreSQL, RabbitMQ, S3-compatible storage
-make engines-install    # native Mac engines (once)
-make engines-up         # start the native engines
+npm ci                                  # JavaScript workspaces; also installs the git hooks
+
+# Build the bundled runtime once (Python, PostgreSQL, ffmpeg, whisper.cpp, llama.cpp, Parakeet). Slow.
+SAURI_RUNTIME_DIR="$HOME/Library/Caches/sauri-runtime-build/runtime-current" \
+  bash desktop/scripts/build-runtime.sh
+
+npm run desktop:dev                     # run the desktop app against the repository sources
 ```
 
-Docs are indexed in `docs/README.md`; scripts live in `scripts/{dev,engines,platform,tests}`.
+`npm run desktop:dev` builds the portal and the app, then starts PostgreSQL, the API,
+the worker and the native engines from the runtime, using the Python sources in
+`backend/`. Its data lives in `~/Library/Application Support/Sauri-dev` and
+`~/Sauri-dev`, so it never touches a real installation. Logs are in
+`~/Library/Logs/Sauri-dev`.
 
-Python commands run through uv: `cd backend && uv run --extra dev <command>`.
+`make package` builds an installable `.dmg` in `desktop/out/`.
 
-## Workflow
+### The Chrome extension
 
-1. Write or update the spec in `.spectra/specs/<slug>/` (requirements, design, tasks) before code. Specs are indexed in `.spectra/README.md`.
-2. One issue, one branch, one git worktree per delivery unit, created from `origin/main` (`make worktree BRANCH=feature/issue-N-desc`). Never work in the root checkout or on `main`.
-3. Open a pull request linked to the issue. Do not bypass hooks.
+```bash
+npm run build -w extension              # output in extension/dist
+```
+
+Load `extension/dist` as an unpacked extension in `chrome://extensions` (developer
+mode on). The app only pairs with extension IDs listed in `ALLOWED_EXTENSION_IDS`
+(`desktop/src/main/services.ts`). An unpacked build gets an ID from its folder: to
+test it against a development build of the app, add that ID locally and do not
+commit it.
+
+### Older Docker stack
+
+The repository still contains the earlier Docker Compose development stack
+(`make up`, `make engines-install`, `make engines-up`), documented in Spanish in
+[`docs/operations/local-deployment.md`](docs/operations/local-deployment.md). It is
+being retired in favour of the desktop app; use it only if your change targets it.
+
+## Pull requests
+
+1. Fork the repository and create a branch from `main` (for example
+   `fix/upload-progress` or `feat/export-srt`).
+2. Keep each pull request focused on one change, with tests.
+3. Run the checks below and say in the pull request what you ran.
+4. Open the pull request against `main` and fill in the template. Link the issue
+   it closes.
+
+The git hooks (installed by `npm ci`, or `make setup-hooks`) block commits and
+pushes to `main` and check that code identifiers are in English. Do not bypass them.
 
 ## Required checks
 
 ```bash
 npm run typecheck
 npm run test
+npm run i18n:check -w frontend          # only when you touch portal copy
+npm run i18n:check -w extension         # only when you touch extension copy
 cd backend && uv run --extra dev pytest -q
 cd backend && uv run --extra dev ruff check .
-cd backend && uv run --extra dev mypy .
-make test-scripts       # only when you touch scripts/
+cd backend && uv run --extra dev mypy app
+make test-scripts                       # only when you touch scripts/
+make check-english
 ```
+
+`ruff check .` has known baseline errors on `main`; a pull request must not add new
+ones, and `mypy app` must stay clean. Python commands always run through `uv` from `backend/`.
 
 ## Conventions
 
-- Identifiers, comments and commit messages are in English. User-facing UI copy (Spanish source and English) lives only in `frontend/src/locales/`; `npm run i18n:check` keeps both languages in step. `make check-english` enforces this.
+- Code, identifiers, comments and commit messages are in English, without accents.
+- User-facing text lives only in the translation files: `frontend/src/locales/`,
+  `extension/src/locales/` and `desktop/src/locales/`. Spanish is the source
+  language and English must stay in step.
 - Keep changes small, tested and consistent with the surrounding code. No dead code.
-- Secrets go in environment variables or files outside the repository, never in commits or logs.
+- Secrets go in environment variables or files outside the repository, never in
+  commits, logs or test fixtures.
+- Design tokens and UI rules are in [`DESIGN.md`](DESIGN.md).
+
+## License
+
+By contributing you agree that your contributions are licensed under the
+[Apache License 2.0](LICENSE), the license of this project.
