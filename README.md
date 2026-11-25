@@ -106,7 +106,7 @@ Sauri is young and under active development. The Mac app is usable day to day, b
 
 ## Contributing
 
-Bug reports, ideas and pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) and follow the [Code of Conduct](CODE_OF_CONDUCT.md). Please do not attach real meeting recordings or transcripts to issues.
+Bug reports, ideas and pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), then [AGENTS.md](AGENTS.md) for the project rules (written for people and AI coding agents) and follow the [Code of Conduct](CODE_OF_CONDUCT.md). Please do not attach real meeting recordings or transcripts to issues.
 
 Security problems go through private vulnerability reporting, not public issues: see [SECURITY.md](SECURITY.md).
 
