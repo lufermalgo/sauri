@@ -100,7 +100,9 @@ describe("upload failures must remain retryable", () => {
     const jobs = await waitForStoredStatus("done");
     expect(jobs).toHaveLength(1);
     expect(jobs[0]).toMatchObject({ status: "done", retryCount: 0 });
-    expect(clearSession).toHaveBeenCalledWith("synthetic-session");
+    // The job is stored as done before the background awaits the review tab and clearSession; wait for that tail
+    // instead of racing it (vitest 4 runs files in forks and lost this race now and then).
+    await vi.waitFor(() => expect(clearSession).toHaveBeenCalledWith("synthetic-session"));
     expect(chrome.tabs.create).toHaveBeenCalledTimes(1);
     expect(chrome.tabs.create).toHaveBeenCalledWith({ url: "http://localhost:41750/?meetingId=synthetic-meeting" });
   });

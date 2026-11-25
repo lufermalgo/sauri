@@ -21,7 +21,7 @@ const summary = {
 const pending = { event_id: "event-1", generation: 1, status: "pending" };
 let artifact: typeof summary | null;
 let latest: { event_id: string; generation: number; status: string; failure_cause?: string } | null;
-let fetchMock: Mock<[url: string, init?: RequestInit], Promise<Response>>;
+let fetchMock: Mock<(url: string, init?: RequestInit) => Promise<Response>>;
 
 function response(body: unknown, status = 200): Response {
   return { ok: status >= 200 && status < 300, status, json: async () => body } as Response;

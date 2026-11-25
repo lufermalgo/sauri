@@ -3,6 +3,7 @@ import { panelCopy as copy } from "../i18n/spanish";
 // Exercise the public panel until RecordingCompletionStatus exists: missing
 // production UI must fail a visible assertion, not an unresolved import.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { Mock } from "vitest";
 import { isHealth, sauriHealth } from "../test-backend";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { IDBFactory } from "fake-indexeddb";
@@ -370,7 +371,7 @@ describe("T1.9: durable same-recording completion feedback", () => {
 
   /** Holds back only the projection read; the session token read must still resolve. */
   function delayProjectionRead() {
-    const get = vi.mocked(chrome.storage.session.get) as unknown as ReturnType<typeof vi.fn>;
+    const get = vi.mocked(chrome.storage.session.get) as unknown as Mock<(keys: unknown) => Promise<unknown>>;
     const original = get.getMockImplementation()!;
     let release!: (value: { sauriState: typeof projection }) => void;
     let delayed = false;

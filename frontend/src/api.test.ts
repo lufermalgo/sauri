@@ -80,7 +80,8 @@ describe("byte-based recording upload", () => {
     vi.spyOn(xhr, "open").mockImplementation(() => {});
     vi.spyOn(xhr, "setRequestHeader").mockImplementation(() => {});
     vi.spyOn(xhr, "send").mockImplementation(() => {});
-    const constructor = vi.fn(() => xhr);
+    // Called with `new`: vitest 4 mocks need a function (not arrow) implementation to be constructible.
+    const constructor = vi.fn(function () { return xhr; });
     vi.stubGlobal("XMLHttpRequest", constructor);
     return { xhr, constructor };
   }

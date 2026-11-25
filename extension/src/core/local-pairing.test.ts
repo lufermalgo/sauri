@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Mock } from "vitest";
 import { DESKTOP_URL, sauriHealth } from "../test-backend";
 
 let local: Record<string, unknown>;
 let session: Record<string, unknown>;
-let areas: Record<string, { remove: ReturnType<typeof vi.fn<[string | string[]], Promise<void>>> }>;
+let areas: Record<string, { remove: Mock<(keys: string | string[]) => Promise<void>> }>;
 beforeEach(() => {
   vi.resetModules();
   local = {};
