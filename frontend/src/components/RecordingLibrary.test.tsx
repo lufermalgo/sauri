@@ -510,7 +510,9 @@ describe("RecordingLibrary as the list pane", () => {
 
   it("refreshes quietly when a recording is renamed or deleted elsewhere", async () => {
     const view = await openPane();
+    // Since vitest 3, spyOn returns the spy openPane already made: clear it to count only the refresh.
     const list = vi.spyOn(api, "listMeetings").mockResolvedValue([meeting({ id: "b", title: "Second renamed" })]);
+    list.mockClear();
     window.dispatchEvent(new Event(LIBRARY_CHANGED_EVENT));
     await waitFor(() => expect(rowOpen(/Second renamed/)).toBeDefined());
     expect(screen.queryByRole("button", { name: /First/ })).toBeNull();

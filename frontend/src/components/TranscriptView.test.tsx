@@ -52,6 +52,8 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   vi.useRealTimers();
+  // Since vitest 3, restoreAllMocks only restores spyOn spies; reset the vi.mock factory mocks too.
+  vi.resetAllMocks();
   vi.restoreAllMocks();
 });
 

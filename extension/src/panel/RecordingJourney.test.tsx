@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sauriHealth } from "../test-backend";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { IDBFactory } from "fake-indexeddb";
 import { SidePanelApp } from "./SidePanelApp";
 import { panelCopy as copy } from "../i18n/spanish";
@@ -38,7 +38,9 @@ beforeEach(() => {
   });
   vi.stubGlobal("fetch", vi.fn(async () => new Response("[]", { status: 200 })));
 });
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+// Vitest runs afterEach hooks in stack order, so this hook runs before the setup file's cleanup():
+// unmount first, while the chrome stub that the panel's effect cleanups use still exists.
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 async function ready() {
   const record = await screen.findByRole("button", { name: copy.newRecording });

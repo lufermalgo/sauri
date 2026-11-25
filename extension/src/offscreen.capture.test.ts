@@ -93,8 +93,9 @@ async function loadOffscreenWithMocks(getUserMediaImpl: (constraints: unknown) =
   vi.stubGlobal("navigator", {
     permissions: { query: vi.fn(async () => ({ state: "granted" })) },
     mediaDevices: {
-      getDisplayMedia: vi.fn(getUserMediaImpl),
-      getUserMedia: vi.fn(getUserMediaImpl),
+      // vitest 4 returns the same mock from vi.fn(mock), so wrap the implementation to keep two distinct mocks.
+      getDisplayMedia: vi.fn((constraints: unknown) => getUserMediaImpl(constraints)),
+      getUserMedia: vi.fn((constraints: unknown) => getUserMediaImpl(constraints)),
     },
   });
   vi.stubGlobal("AudioContext", FakeAudioContext);
