@@ -1,6 +1,6 @@
 """Tests for the Language_Regression_Check tool (scripts/dev/check_english_only.py).
 
-These tests verify the English-only identifier policy documented in AGENTS.md.
+These tests verify the English-only identifier policy documented in CONTRIBUTING.md.
 """
 
 from __future__ import annotations

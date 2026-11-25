@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Blocks direct commits to main. Part of the branch-isolation policy in AGENTS.md (Code changes and Git protection).
+# Blocks direct commits to main. Part of the branch-isolation policy in CONTRIBUTING.md.
 #
-# Installed via `core.hooksPath .githooks` (see AGENTS.md / Makefile `make setup`).
+# Installed via `core.hooksPath .githooks` (see CONTRIBUTING.md / Makefile `make setup`).
 # Bypass: `git commit --no-verify` (intentional escape hatch, not silent).
 
 branch="$(git symbolic-ref --short HEAD 2>/dev/null)"
@@ -15,7 +15,7 @@ if [ "$branch" = "main" ]; then
 fi
 
 # Language_Regression_Check — blocks staged Spanish identifiers.
-# Enforces the English-only naming convention documented in AGENTS.md.
+# Enforces the English-only naming convention documented in CONTRIBUTING.md.
 repo_root="$(git rev-parse --show-toplevel)"
 
 if ! python3 "$repo_root/scripts/dev/check_english_only.py" --staged; then

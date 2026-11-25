@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Creates an isolated git worktree + branch for a spec/issue, so concurrent
-# agent sessions never share a working directory (see AGENTS.md: Code changes and Git protection).
+# agent sessions never share a working directory (see CONTRIBUTING.md).
 #
 # Usage: scripts/dev/new-worktree.sh <branch-name>
 #   e.g.: scripts/dev/new-worktree.sh feature/issue-12-silero-vad
@@ -41,17 +41,17 @@ else
   git -C "$repo_root" worktree add -b "$branch" "$dest" origin/main
 fi
 
-# .agents/skills is local project configuration (not present in every remote
-# branch). Seed each isolated checkout so agents see the same linked Spectra
-# skills; preserve any branch-provided version.
-if [ -d "$repo_root/.agents/skills" ] && [ ! -e "$dest/.agents/skills" ]; then
-  mkdir -p "$dest/.agents/skills"
-  cp -a "$repo_root/.agents/skills/." "$dest/.agents/skills/"
-fi
-if [ -f "$repo_root/.agents/skills-manager.json" ] && [ ! -e "$dest/.agents/skills-manager.json" ]; then
-  mkdir -p "$dest/.agents"
-  cp -p "$repo_root/.agents/skills-manager.json" "$dest/.agents/skills-manager.json"
-fi
+# The maintainer's private working files (agent rules and settings, specs, internal notes) are ignored by git
+# and live only in the main checkout. Link each one into the new worktree so agents find the same files there and
+# edits land in the single copy.
+private_paths=(.claude .agents .spectra AGENTS.md CLAUDE.md docs/product docs/history docs/operations docs/design
+  docs/architecture/overview.md docs/architecture/project-structure.md)
+for item in "${private_paths[@]}"; do
+  if [ -e "$repo_root/$item" ] && [ ! -e "$dest/$item" ] && [ ! -L "$dest/$item" ]; then
+    mkdir -p "$(dirname "$dest/$item")"
+    ln -s "$repo_root/$item" "$dest/$item"
+  fi
+done
 
 echo ""
 echo "Worktree ready:"

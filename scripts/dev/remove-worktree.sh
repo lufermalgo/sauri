@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Removes a worktree created by scripts/dev/new-worktree.sh once its PR has merged
-# (see AGENTS.md: Code changes and Git protection — clean up branches/worktrees after merge).
+# (clean up branches and worktrees after merge).
 #
 # Usage: scripts/dev/remove-worktree.sh <branch-name>
 #   e.g.: scripts/dev/remove-worktree.sh feature/issue-12-silero-vad
