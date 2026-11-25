@@ -2,7 +2,7 @@
 # sauri - Makefile para desarrollo local
 # =============================================================================
 
-.PHONY: up down logs build clean migrate setup-hooks worktree worktree-rm check-english test-scripts test-pg engines-install engines-up engines-down engines-status package package-clean
+.PHONY: up down logs build clean migrate setup-hooks worktree worktree-rm check-english check-private test-scripts test-pg engines-install engines-up engines-down engines-status package package-clean
 
 SAURI_NATIVE_VENV ?= $(HOME)/.local/share/sauri/native-engines/asr-venv
 NATIVE_PYTHON311 ?= python3.11
@@ -57,6 +57,10 @@ engines-status:
 
 ## Escanear todo el repo en busca de identificadores en español (Language_Regression_Check).
 ## Ver CONTRIBUTING.md para las reglas de idioma del código.
+## Nada privado en el repositorio publico: nombres de la lista privada, rutas reales de usuario ni credenciales.
+check-private:
+	python3 scripts/dev/check_private_terms.py
+
 check-english:
 	python3 scripts/dev/check_english_only.py $$(git ls-files 'backend/**' 'extension/src/**' 'frontend/src/**' 'packages/shared-types/**')
 

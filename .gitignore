@@ -55,7 +55,8 @@ landing/.review/
 /.claude/
 /.agents/
 /.spectra/
-/AGENTS.md
+/MAINTAINERS.local.md
+/.private-terms.txt
 /CLAUDE.md
 /docs/product/
 /docs/history/

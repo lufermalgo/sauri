@@ -24,4 +24,10 @@ if ! python3 "$repo_root/scripts/dev/check_english_only.py" --staged; then
   exit 1
 fi
 
+# Public-safe content — blocks private names, real home paths and credentials (AGENTS.md rule).
+if ! python3 "$repo_root/scripts/dev/check_private_terms.py" --staged; then
+  echo "ERROR: staged changes contain private data (see above). Replace it with a placeholder." >&2
+  exit 1
+fi
+
 exit 0

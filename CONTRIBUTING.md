@@ -3,6 +3,10 @@
 Thanks for your interest in Sauri. Bug reports, ideas and pull requests are all
 welcome. By taking part you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
+This file covers setup and pull requests. How to work on the code, the project rules and
+the guides behind them are in [`AGENTS.md`](AGENTS.md) and [`rules/`](rules/). They are
+written for people and AI coding agents alike, so point your agent at `AGENTS.md`.
+
 ## Before you start
 
 - **Bugs and ideas:** open an issue with the bug or feature form. Search existing
@@ -58,32 +62,20 @@ The repository still contains the earlier Docker Compose development stack
 
 ## Pull requests
 
-1. Fork the repository and create a branch from `main` (for example
-   `fix/upload-progress` or `feat/export-srt`).
-2. Keep each pull request focused on one change, with tests.
-3. Run the checks below and say in the pull request what you ran.
-4. Open the pull request against `main` and fill in the template. Link the issue
-   it closes.
+1. Open or pick an issue, and for anything beyond a small fix wait for a maintainer's
+   go-ahead on the approach.
+2. Fork the repository and create a branch from `main`, named like the change
+   (`fix/upload-progress`, `feat/export-srt`).
+3. Keep the pull request to one change, with tests. Follow
+   [`rules/WORKFLOW.md`](rules/WORKFLOW.md).
+4. Run the checks for what you touched ([`rules/TESTING.md`](rules/TESTING.md#which-checks))
+   and try the change in the running app (`npm run desktop:dev`).
+5. Open the pull request against `main` and fill in the template: what and why,
+   verification, and documentation impact.
 
-The git hooks (installed by `npm ci`, or `make setup-hooks`) block commits and
-pushes to `main` and check that code identifiers are in English. Do not bypass them.
-
-## Required checks
-
-```bash
-npm run typecheck
-npm run test
-npm run i18n:check -w frontend          # only when you touch portal copy
-npm run i18n:check -w extension         # only when you touch extension copy
-cd backend && uv run --extra dev pytest -q
-cd backend && uv run --extra dev ruff check .
-cd backend && uv run --extra dev mypy app
-make test-scripts                       # only when you touch scripts/
-make check-english
-```
-
-`ruff check .` has known baseline errors on `main`; a pull request must not add new
-ones, and `mypy app` must stay clean. Python commands always run through `uv` from `backend/`.
+The git hooks (installed by `npm ci`, or `make setup-hooks`) block commits and pushes
+to `main`, check that code identifiers are in English, and stop private data
+(`make check-private`, see [`rules/PRIVACY.md`](rules/PRIVACY.md)). Do not bypass them.
 
 ## Conventions
 

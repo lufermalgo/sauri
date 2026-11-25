@@ -44,7 +44,7 @@ fi
 # The maintainer's private working files (agent rules and settings, specs, internal notes) are ignored by git
 # and live only in the main checkout. Link each one into the new worktree so agents find the same files there and
 # edits land in the single copy.
-private_paths=(.claude .agents .spectra AGENTS.md CLAUDE.md docs/product docs/history docs/operations docs/design
+private_paths=(.claude .agents .spectra MAINTAINERS.local.md CLAUDE.md docs/product docs/history docs/operations docs/design
   docs/architecture/overview.md docs/architecture/project-structure.md)
 for item in "${private_paths[@]}"; do
   if [ -e "$repo_root/$item" ] && [ ! -e "$dest/$item" ] && [ ! -L "$dest/$item" ]; then

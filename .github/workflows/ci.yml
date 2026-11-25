@@ -135,6 +135,9 @@ jobs:
               },
           )
           PY
+      - name: "Public-safe content (no real home paths or credentials)"
+        working-directory: .
+        run: python scripts/dev/check_private_terms.py
       - name: "Backend lint (ruff) - non-blocking, tracked by #228"
         working-directory: backend
         continue-on-error: true
