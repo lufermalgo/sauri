@@ -66,8 +66,8 @@ Para firmar el instalador, el servicio barato de Microsoft (Artifact Signing) no
 - **Probador_con_NVIDIA**: el compañero del dueño que prueba las versiones de Windows en su PC con tarjeta NVIDIA antes de publicarlas.
 - **Conjunto_de_Referencia**: las grabaciones que se usan para comparar calidad entre plataformas, con hablantes conocidos:
   - grabación B: 4 personas.
-  - Kelyn: 2 personas.
-  - Nutresa-Pozuelo: 4 grupos.
+  - grabación F: 2 personas.
+  - grabación G: 4 grupos.
   - Las dos del cliente C: 2 personas cada una.
   - grabación A.
   - La grabación corta de una persona del 19/11/2026.
