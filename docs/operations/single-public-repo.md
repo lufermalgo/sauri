@@ -11,7 +11,7 @@ Se revisaron los 2222 commits que GitHub guarda (rama `main` y las referencias d
 - **Nombres de grabaciones reales del dueño**, que dejan ver clientes y temas de trabajo. En los archivos actuales ya se reemplazaron por «grabación A…E» (rama de este cambio). Siguen en commits antiguos, que no se pueden borrar de GitHub (las referencias de PR son permanentes), y en el texto de 7 issues o comentarios. El texto de esos issues se puede editar; GitHub guarda las versiones anteriores, que el dueño puede borrar desde el menú «editado» de cada uno.
 - **La empresa del dueño aparece en el historial** como dueña de la «plataforma interna» (specs antiguas, datos de prueba con su dominio de correo, maquetas de diseño con su marca).
 - **Notas internas:** reglas de trabajo de los agentes (`AGENTS.md`, `CLAUDE.md`, `.claude/`, `.agents/`, `.spectra/`) y rutas de la carpeta personal del dueño. No tienen datos privados; quedan públicas como forma de trabajar del proyecto.
-- **Sin licencia:** no hay archivo `LICENSE`. Sin él, el código público se puede leer pero nadie tiene permiso de usarlo ni de mejorarlo. `THIRD_PARTY_NOTICES.md` ya cubre los modelos y componentes de terceros.
+- **Sin licencia** al momento de la revisión; el dueño eligió Apache-2.0 (se agrega en este cambio). `THIRD_PARTY_NOTICES.md` ya cubre los modelos y componentes de terceros.
 - **CI:** `ci.yml` usa `pull_request` (no `pull_request_target`) y no tiene secretos, así que es seguro recibir PR de otras personas. En un repositorio público, GitHub Actions es gratis.
 
 ## Qué depende hoy de `sauri-app`
@@ -23,7 +23,7 @@ Se revisaron los 2222 commits que GitHub guarda (rama `main` y las referencias d
 
 ## Orden de los pasos
 
-1. **(dueño)** Elegir licencia (recomendada MIT: permite usar, modificar y vender, solo pide conservar el aviso de autor) y decidir si se limpia el texto de los 7 issues.
+1. Licencia: Apache-2.0, elegida por el dueño el 25-11-2026 (`LICENSE`, `NOTICE`). **(dueño)** Decidir si se limpia el texto de los 7 issues.
 2. **(dueño)** Hacer público `lufermalgo/sauri` (Settings → General → Danger Zone → Change visibility). Activar Pages con origen «GitHub Actions» y proteger `main` (sin push directo ni `--force`).
 3. Fusionar este cambio. Desde ahí, la página se publica sola desde `landing/` con `.github/workflows/pages.yml` en `https://lufermalgo.github.io/sauri/`.
 4. Copiar a las Releases de `lufermalgo/sauri` `v0.2.3` y `diar-0.1.0` (los mismos archivos y huellas), para que la página y la app tengan qué bajar desde el primer día.
@@ -38,3 +38,4 @@ Se revisaron los 2222 commits que GitHub guarda (rama `main` y las referencias d
 - La página y la política de privacidad enlazan al repositorio y a la dirección nuevos.
 - Flujo de publicación de la página (`.github/workflows/pages.yml`).
 - Nombres de grabaciones reales reemplazados en specs y documentos.
+- Licencia Apache-2.0 (`LICENSE`, `NOTICE`, campos `license` de los paquetes, README).
