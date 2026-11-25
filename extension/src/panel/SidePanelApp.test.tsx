@@ -94,7 +94,8 @@ describe("SidePanelApp", () => {
     mockChrome(true);
     render(<SidePanelApp />);
     await waitFor(() => expect(screen.getByText(copy.panelTitle)).toBeInTheDocument());
-    expect(screen.getByText(copy.recordings)).toBeInTheDocument();
+    // The recordings section renders after the stored sessions load, a step after the header.
+    expect(await screen.findByText(copy.recordings)).toBeInTheDocument();
     expect(screen.getByText(copy.screenAudio)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: copy.newRecording })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
@@ -105,10 +106,12 @@ describe("SidePanelApp", () => {
     vi.stubGlobal("indexedDB", new IDBFactory());
     mockChrome(true);
     render(<SidePanelApp />);
-    const settings = await screen.findByRole("button", { name: copy.settings });
+    // Wait until the stored sessions have loaded, as a person would, before using the toolbar.
+    await screen.findByText(copy.recordings);
+    const settings = screen.getByRole("button", { name: copy.settings });
     expect(screen.getAllByRole("button", { name: copy.settings })).toHaveLength(1);
     fireEvent.click(settings);
-    expect(screen.getByRole("dialog", { name: copy.settings })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: copy.settings })).toBeInTheDocument();
     expect(screen.getByLabelText(copy.countdown)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: copy.newRecording })).toBeInTheDocument();
   });
