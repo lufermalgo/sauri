@@ -55,6 +55,20 @@ function mediaElement(kind: "audio" | "video" = "audio"): HTMLMediaElement {
   return screen.getByTestId(kind === "audio" ? "playback-audio" : "playback-video") as HTMLMediaElement;
 }
 
+/** jsdom never plays: mark the element as playing or paused and fire the matching event. */
+function setPlaying(media: HTMLMediaElement, playing: boolean) {
+  Object.defineProperty(media, "paused", { configurable: true, value: !playing });
+  fireEvent(media, new Event(playing ? "play" : "pause"));
+}
+
+function muxedManifest() {
+  return manifest({
+    video_presence: "muxed",
+    audio_source: { source_id: "muxed-audio", url: MUXED_URL, mime_type: null },
+    muxed_video_source: { source_id: "muxed-video", url: MUXED_URL, mime_type: null },
+  });
+}
+
 function setMediaTime(media: HTMLMediaElement, seconds: number) {
   Object.defineProperty(media, "currentTime", { configurable: true, writable: true, value: seconds });
   fireEvent.timeUpdate(media);
@@ -85,10 +99,11 @@ describe("MeetingPlaybackView", () => {
     fireEvent.change(seek, { target: { value: "12000" } });
     expect(audio.currentTime).toBe(12);
 
+    fireEvent.click(screen.getByRole("button", { name: t("meeting:play") }));
+    await waitFor(() => expect(play).toHaveBeenCalled());
+    setPlaying(audio, true);
     fireEvent.click(screen.getByRole("button", { name: t("meeting:pause") }));
     expect(pause).toHaveBeenCalledWith();
-    fireEvent.click(screen.getByRole("button", { name: t("meeting:resume") }));
-    await waitFor(() => expect(play).toHaveBeenCalled());
 
     fireEvent.change(screen.getByRole("combobox", { name: t("meeting:speed") }), { target: { value: "1.5" } });
     expect(audio.playbackRate).toBe(1.5);
@@ -248,7 +263,7 @@ describe("MeetingPlaybackView", () => {
     Object.defineProperty(audio, "duration", { configurable: true, value: 30 });
     fireEvent.loadedMetadata(audio);
 
-    fireEvent.click(screen.getByRole("button", { name: t("meeting:resume") }));
+    fireEvent.click(screen.getByRole("button", { name: t("meeting:play") }));
     await waitFor(() => expect(screen.getByRole("alert")).toBeVisible());
     expect(play).toHaveBeenCalledTimes(2);
     expect(pause).toHaveBeenCalledTimes(2);
@@ -275,15 +290,17 @@ it("shows a localized load failure even when no manifest is available", () => {
 });
 
 it("keeps exactly the existing controls together in one compact toolbar", () => {
+  Object.defineProperty(document, "fullscreenEnabled", { configurable: true, value: true });
   renderView({ manifest: manifest({ video_presence: "separate", video_sources: [source("low", VIDEO_LOW_URL), source("high", VIDEO_HIGH_URL)] }) });
   const toolbar = document.querySelector(".meeting-player-controls") as HTMLElement;
   expect(within(toolbar).getAllByRole("button").map(button => button.getAttribute("aria-label")))
-    .toEqual([t("meeting:pause"), t("meeting:resume"), t("meeting:mute")]);
+    .toEqual([t("meeting:play"), t("meeting:mute"), t("meeting:fullscreen")]);
   expect(within(toolbar).getAllByRole("slider").map(slider => slider.getAttribute("aria-label")))
     .toEqual([t("meeting:seek"), t("meeting:volume")]);
   expect(within(toolbar).getAllByRole("combobox").map(select => select.getAttribute("aria-label")))
     .toEqual([t("meeting:speed"), t("meeting:quality")]);
-  expect(toolbar.querySelector(".meeting-control-time")).toHaveTextContent("0:00 / --:--");
+  // The manifest's duration shows before the media reports one (a browser-recorded WebM never does).
+  expect(toolbar.querySelector(".meeting-control-time")).toHaveTextContent("0:00 / 0:30");
 });
 
 it("seeks timeline markers through the original playback controller and tracks its clock", async () => {
@@ -302,4 +319,109 @@ it("seeks timeline markers through the original playback controller and tracks i
   expect(audio.currentTime).toBe(10);
   fireEvent.timeUpdate(audio);
   expect(timeline).toHaveAttribute("aria-valuenow", "10000");
+});
+
+describe("playback controls", () => {
+  afterEach(() => {
+    Reflect.deleteProperty(document, "fullscreenEnabled");
+    Reflect.deleteProperty(document, "fullscreenElement");
+    Reflect.deleteProperty(HTMLElement.prototype, "requestFullscreen");
+    Reflect.deleteProperty(document, "exitFullscreen");
+  });
+
+  it("enables play, pause and seek for a browser-recorded WebM whose duration is infinite", async () => {
+    const play = vi.fn().mockResolvedValue(undefined);
+    HTMLMediaElement.prototype.play = play;
+    renderView();
+    const audio = mediaElement();
+    Object.defineProperty(audio, "duration", { configurable: true, value: Infinity });
+    fireEvent.loadedMetadata(audio);
+
+    const toggle = screen.getByRole("button", { name: t("meeting:play") });
+    expect(toggle).toBeEnabled();
+    const seek = screen.getByRole("slider", { name: t("meeting:seek") });
+    expect(seek).toBeEnabled();
+    expect(seek).toHaveAttribute("max", "30000");
+    expect(document.querySelector(".meeting-control-time")).toHaveTextContent("0:00 / 0:30");
+    fireEvent.change(seek, { target: { value: "20000" } });
+    expect(audio.currentTime).toBe(20);
+    fireEvent.click(toggle);
+    await waitFor(() => expect(play).toHaveBeenCalled());
+  });
+
+  it("pauses playback that a transcript turn started", async () => {
+    const play = vi.fn().mockResolvedValue(undefined);
+    const pause = vi.fn();
+    HTMLMediaElement.prototype.play = play;
+    HTMLMediaElement.prototype.pause = pause;
+    let seekTo: ((timeMs: number, play?: boolean) => void) | undefined;
+    render(<MeetingPlaybackView manifest={manifest()} loading={false} error={null}
+      onSeekToReady={registered => { seekTo = registered; }} />);
+    const audio = mediaElement();
+    Object.defineProperty(audio, "duration", { configurable: true, value: Infinity });
+    fireEvent.loadedMetadata(audio);
+
+    seekTo?.(12000, true);
+    await waitFor(() => expect(play).toHaveBeenCalled());
+    expect(audio.currentTime).toBe(12);
+    setPlaying(audio, true);
+    fireEvent.click(screen.getByRole("button", { name: t("meeting:pause") }));
+    expect(pause).toHaveBeenCalled();
+    setPlaying(audio, false);
+    expect(screen.getByRole("button", { name: t("meeting:play") })).toBeEnabled();
+  });
+
+  it("plays and pauses when the picture is clicked", async () => {
+    const play = vi.fn().mockResolvedValue(undefined);
+    const pause = vi.fn();
+    HTMLMediaElement.prototype.play = play;
+    HTMLMediaElement.prototype.pause = pause;
+    renderView({ manifest: muxedManifest() });
+    const video = screen.getByTestId("playback-media") as HTMLVideoElement;
+    fireEvent.loadedMetadata(video);
+
+    fireEvent.click(video);
+    await waitFor(() => expect(play).toHaveBeenCalled());
+    setPlaying(video, true);
+    fireEvent.click(video);
+    expect(pause).toHaveBeenCalled();
+  });
+
+  it("puts the picture, its controls and the timeline in full screen and leaves it again", async () => {
+    Object.defineProperty(document, "fullscreenEnabled", { configurable: true, value: true });
+    let stage: HTMLElement | null = null;
+    const requestFullscreen = vi.fn(function (this: HTMLElement) {
+      stage = this;
+      Object.defineProperty(document, "fullscreenElement", { configurable: true, value: this });
+      document.dispatchEvent(new Event("fullscreenchange"));
+      return Promise.resolve();
+    });
+    const exitFullscreen = vi.fn(() => {
+      Object.defineProperty(document, "fullscreenElement", { configurable: true, value: null });
+      document.dispatchEvent(new Event("fullscreenchange"));
+      return Promise.resolve();
+    });
+    Object.defineProperty(HTMLElement.prototype, "requestFullscreen", { configurable: true, value: requestFullscreen });
+    Object.defineProperty(document, "exitFullscreen", { configurable: true, value: exitFullscreen });
+    renderView({ manifest: muxedManifest() });
+    const video = screen.getByTestId("playback-media") as HTMLVideoElement;
+    fireEvent.loadedMetadata(video);
+
+    fireEvent.click(screen.getByRole("button", { name: t("meeting:fullscreen") }));
+    expect(requestFullscreen).toHaveBeenCalledTimes(1);
+    expect(stage).toContainElement(video);
+    expect(stage).toContainElement(document.querySelector(".meeting-player-controls") as HTMLElement);
+    expect(stage).toContainElement(document.querySelector(".meeting-timeline") as HTMLElement);
+    const exit = await screen.findByRole("button", { name: t("meeting:exitFullscreen") });
+    fireEvent.click(exit);
+    expect(exitFullscreen).toHaveBeenCalled();
+    expect(await screen.findByRole("button", { name: t("meeting:fullscreen") })).toBeVisible();
+  });
+
+  it("offers no full screen for an audio-only recording", () => {
+    Object.defineProperty(document, "fullscreenEnabled", { configurable: true, value: true });
+    renderView();
+    fireEvent.loadedMetadata(mediaElement());
+    expect(screen.queryByRole("button", { name: t("meeting:fullscreen") })).toBeNull();
+  });
 });

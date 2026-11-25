@@ -1523,7 +1523,7 @@ describe("TranscriptView — speakers panel beside the video", () => {
     expect(document.querySelector("[inert]")).toBeNull();
     expect(document.body.style.overflow).not.toBe("hidden");
     // The video and its controls stay reachable (not hidden from the accessibility tree).
-    expect(screen.getByRole("button", { name: t("meeting:resume") })).toBeVisible();
+    expect(screen.getByRole("button", { name: t("meeting:play") })).toBeVisible();
     expect(screen.getByTestId("playback-audio")).toBeInTheDocument();
   });
 

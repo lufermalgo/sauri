@@ -20,6 +20,7 @@ import {
 } from "../transcript-presentation";
 import { ProcessingStatus } from "./ProcessingStatus";
 import { SummaryPanel } from "./SummaryPanel";
+import { SideColumnResizer, useSideColumnWidth } from "./SideColumnResizer";
 import { useStageStart } from "../useStageStart";
 import { MeetingHeader } from "./MeetingHeader";
 import { LIBRARY_CHANGED_EVENT } from "../library-events";
@@ -119,6 +120,7 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
   const viewRef = useRef<HTMLElement>(null);
   const [playingSpeakerId, setPlayingSpeakerId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("summary");
+  const sideColumn = useSideColumnWidth();
   const [keyPointTimes, setKeyPointTimes] = useState<number[]>([]);
   // The summary the side panel already loaded feeds the key-point markers and the header's download.
   const [hasSummary, setHasSummary] = useState(false);
@@ -645,7 +647,9 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
       </div>
       </section>
       </div>
-      <aside className="meeting-side-column">
+      <aside className="meeting-side-column"
+        style={sideColumn.width === null ? undefined : { "--meeting-side-w": `${sideColumn.width}px` } as React.CSSProperties}>
+      <SideColumnResizer width={sideColumn.width} onResize={sideColumn.resize} />
       <div className="meeting-sidebar">
         <Tabs aria-label={t("meeting:sideTabs")} activeId={activeTab} onChange={setActiveTab} tabs={[
           { id: "summary", label: t("meeting:summaryTab"), panel: meeting
