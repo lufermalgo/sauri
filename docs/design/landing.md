@@ -14,6 +14,13 @@ La página pasó a ser la página pública de descarga (se publicó primero en `
 - **Diseño:** referencia estructural de apxagent.app (cabecera con menú en píldora, titular grande con poco interletrado, tarjetas de descarga con estado, pasos unidos por una línea), sin copiar textos, marca ni código. Letra del sistema (San Francisco en Mac). Botones en píldora, tarjetas con radio de 20 px. Botón principal índigo con texto blanco en modo claro y voltio con texto índigo en oscuro. Iconos Lucide (ya los usa el portal) incrustados en la página. Animaciones de aparición solo si el visitante no pidió reducir el movimiento.
 - **Datos de la versión 0.1.2:** tamaño del `.dmg` (272 MB, como lo muestra el Finder) y huella SHA-256 comprobados contra el archivo de `desktop/out` de la rama de la versión.
 
+## 0.0.1 Buscadores y redes (2026-11-25)
+
+- Imagen para compartir `assets/og-image.png` (1200×630) y tarjeta grande de Twitter/X; la imagen de GitHub (1280×640) está en `brand/social-preview.png` y se sube en Settings → Social preview.
+- Ficha `SoftwareApplication` (JSON-LD) sin número de versión, para que la configuración de la versión siga siendo el único lugar que se edita al publicar.
+- `sitemap.xml` (se envía en Google Search Console), `404.html` con rutas absolutas `/sauri/` y `canonical` también en la política de privacidad.
+- La página dice que Sauri es gratis y de código abierto (pregunta frecuente y pie), con enlace al código.
+
 ## 0.1 Rediseño visual (2026-11-18, rama `feat/landing-fable`)
 
 Sustituye la presentación descrita en la sección 0 (el contenido y los datos de la versión no cambian). Se hizo tras revisar la página publicada a 1440 y 375 px, en claro y en oscuro.
