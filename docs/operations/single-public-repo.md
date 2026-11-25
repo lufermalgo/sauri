@@ -1,6 +1,6 @@
 # Un solo repositorio público
 
-Decisión del dueño (25-11-2026): `lufermalgo/sauri`, el repositorio de siempre, pasa a ser público con todo su historial, para que otras personas lo usen y lo mejoren. El repositorio de descargas `lufermalgo/sauri-app` se retira. Este documento es el plan y el orden de los pasos. Cada paso marcado **(dueño)** es un ajuste del repositorio o una acción irreversible que hace o aprueba el dueño.
+Decisión del dueño (25-11-2026): `lufermalgo/sauri`, el repositorio de siempre, pasa a ser público con todo su historial, para que otras personas lo usen y lo mejoren. El repositorio de descargas `lufermalgo/sauri-app` se elimina (decisión del dueño, mismo día). Este documento es el plan y el orden de los pasos. Cada paso marcado **(dueño)** es un ajuste del repositorio o una acción irreversible que hace o aprueba el dueño.
 
 ## Lo que encontró la revisión (25-11-2026)
 
@@ -16,7 +16,7 @@ Se revisaron los 2222 commits que GitHub guarda (rama `main` y las referencias d
 
 ## Qué depende hoy de `sauri-app`
 
-- **Apps instaladas (0.1.0 a 0.2.3):** buscan actualizaciones en `api.github.com/repos/lufermalgo/sauri-app/releases` y bajan la app y el componente de hablantes (`diar-0.1.0`) de sus Releases. Revisan cada salto de una redirección contra una lista fija (`desktop/src/main/releases.ts`, `updater.ts`), así que **renombrar, trasladar o borrar `sauri-app` las dejaría sin actualizaciones**.
+- **Apps instaladas (0.1.0 a 0.2.3):** buscan actualizaciones en `api.github.com/repos/lufermalgo/sauri-app/releases` y bajan la app y el componente de hablantes (`diar-0.1.0`) de sus Releases. Revisan cada salto de una redirección contra una lista fija (`desktop/src/main/releases.ts`, `updater.ts`), así que al eliminar `sauri-app` **esas apps dejan de encontrar actualizaciones**: quien las tenga instaladas baja la versión nueva una vez desde la página (de 1 a 4 descargas por versión; en la práctica, el dueño y uno o dos probadores).
 - **Página:** `https://lufermalgo.github.io/sauri-app/` (Pages desde `main` `/` de `sauri-app`, copiada de `landing/`). La página y la política de privacidad enlazan a sus Releases e issues («Ayuda»).
 - **Chrome Web Store:** la ficha de la extensión apunta a la política de privacidad y a la ayuda en las direcciones de `sauri-app` (se cambian en el panel de la tienda).
 - Descargas registradas: de 1 a 4 por versión.
@@ -27,10 +27,10 @@ Se revisaron los 2222 commits que GitHub guarda (rama `main` y las referencias d
 2. **(dueño)** Hacer público `lufermalgo/sauri` (Settings → General → Danger Zone → Change visibility). Activar Pages con origen «GitHub Actions» y proteger `main` (sin push directo ni `--force`).
 3. Fusionar este cambio. Desde ahí, la página se publica sola desde `landing/` con `.github/workflows/pages.yml` en `https://lufermalgo.github.io/sauri/`.
 4. Copiar a las Releases de `lufermalgo/sauri` `v0.2.3` y `diar-0.1.0` (los mismos archivos y huellas), para que la página y la app tengan qué bajar desde el primer día.
-5. **Versión puente** (p. ej. 0.2.4), la primera que busca en `lufermalgo/sauri`. Se publica en `lufermalgo/sauri` **y** en `sauri-app`, así las apps instaladas la encuentran donde miran hoy y, al actualizarse, pasan a mirar el repositorio público.
-6. En `sauri-app` se reemplaza la página por un aviso con redirección automática a la dirección nueva y el README dice dónde vive ahora el proyecto.
-7. **(dueño)** En el panel de Chrome Web Store, cambiar la política de privacidad a `https://lufermalgo.github.io/sauri/privacidad.html` y la ayuda a `https://github.com/lufermalgo/sauri/issues`.
-8. **(dueño)** Archivar `sauri-app`: queda de solo lectura y sigue sirviendo la versión puente y la redirección. No se borra ni se renombra.
+5. Publicar la siguiente versión (p. ej. 0.2.4), la primera que busca en `lufermalgo/sauri`, solo en `lufermalgo/sauri`.
+6. **(dueño)** En el panel de Chrome Web Store, cambiar la política de privacidad a `https://lufermalgo.github.io/sauri/privacidad.html` y la ayuda a `https://github.com/lufermalgo/sauri/issues`, **antes** del paso 7: la tienda exige que la política de privacidad responda.
+7. **(dueño)** Eliminar `sauri-app` (Settings → Danger Zone → Delete this repository). Su página `lufermalgo.github.io/sauri-app` deja de existir.
+8. Quien tenga la app instalada baja la 0.2.4 desde la página nueva y la abre encima de la anterior; desde ahí se actualiza sola.
 
 ## Lo que ya está hecho en la rama `chore/single-public-repo`
 
