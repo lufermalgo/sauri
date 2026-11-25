@@ -60,13 +60,22 @@
 .meeting-sidebar .ui-tab-list { flex: none; flex-wrap: wrap; }
 .meeting-sidebar .ui-tab-panel { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--ds-space-3) 0; }
 .meeting-side-column > p { margin: 0; padding: var(--ds-space-2) var(--ds-space-3); font-size: var(--ds-text-sm); }
+/* Drag handle on the notes column's left edge, only while the column sits beside the player and transcript. */
+.meeting-side-resizer { display: none; position: absolute; z-index: 1; top: 0; bottom: 0; left: -5px; width: 9px; cursor: col-resize; touch-action: none; }
+.meeting-side-resizer::after { content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 1px; background: transparent; transition: background-color var(--ds-duration) var(--ds-ease), box-shadow var(--ds-duration) var(--ds-ease); }
+.meeting-side-resizer:is(:hover, :focus-visible)::after, .meeting-resizing .meeting-side-resizer::after { background: var(--ds-accent-line); box-shadow: 0 0 0 1px var(--ds-accent-line); }
+.meeting-side-resizer:focus-visible { outline: none; }
+/* While dragging, the whole page shows the resize cursor and no text gets selected. */
+.meeting-resizing { cursor: col-resize; user-select: none; }
 
 @container meeting (min-width: 760px) {
   .meeting-body { flex-direction: row; overflow: hidden; }
   .meeting-main { display: flex; flex: 1 1 0; flex-direction: column; min-width: 0; min-height: 0; }
   .meeting-playback-card { order: 0; }
   .meeting-transcript { order: 0; flex: 1 1 0; min-height: 0; }
-  .meeting-side-column { order: 0; flex: 0 0 var(--ds-side-w); width: var(--ds-side-w); max-height: none; border-bottom: 0; border-left: 1px solid var(--ds-border); }
+  /* The user's width (--meeting-side-w) wins over the default; the limits hold even when the window shrinks later. */
+  .meeting-side-column { position: relative; box-sizing: border-box; order: 0; flex: 0 0 var(--meeting-side-w, var(--ds-side-w)); width: var(--meeting-side-w, var(--ds-side-w)); min-width: 280px; max-width: min(720px, calc(100% - 380px)); max-height: none; border-bottom: 0; border-left: 1px solid var(--ds-border); }
+  .meeting-side-resizer { display: block; }
 }
 @container meeting (max-width: 560px) {
   .meeting-processing .processing-stage { grid-template-columns: minmax(0, 1fr); }
@@ -79,6 +88,11 @@
 .meeting-player { --meeting-video-ratio: 1.7778; --meeting-video-max-h: 42vh; min-width: 0; }
 .meeting-player video { display: block; width: 100%; max-height: var(--meeting-video-max-h); border-radius: var(--ds-radius-sm); background: var(--ds-fill-strong); object-fit: contain; }
 .meeting-player audio { max-width: 100%; }
+.meeting-player-stage { min-width: 0; }
+.meeting-player-stage video { cursor: pointer; }
+/* Full screen: the picture fills the screen and the controls and timeline stay under it. */
+.meeting-player-stage:fullscreen { display: flex; flex-direction: column; box-sizing: border-box; padding: var(--ds-space-3); background: var(--ds-surface); }
+.meeting-player-stage:fullscreen video { flex: 1 1 auto; min-height: 0; max-height: none; height: 100%; aspect-ratio: auto; border-radius: 0; background: var(--ds-fill-strong); }
 .meeting-player-controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ds-space-1); margin-top: var(--ds-space-2); }
 .meeting-player-controls label { display: flex; align-items: center; min-width: 0; }
 .meeting-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

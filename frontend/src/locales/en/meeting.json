@@ -58,12 +58,14 @@
   "controls": "Playback controls",
   "pause": "Pause",
   "play": "Play",
-  "resume": "Play or resume",
   "seek": "Playback position",
   "speed": "Playback speed",
   "volume": "Volume",
   "mute": "Mute",
   "unmute": "Unmute",
   "quality": "Video quality",
+  "fullscreen": "Full screen",
+  "exitFullscreen": "Exit full screen",
+  "resizeSidePanel": "Resize the summary panel",
   "datesTooltip": "Recorded {{recorded}} · Processed {{processed}}"
 }

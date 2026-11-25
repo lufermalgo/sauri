@@ -67,6 +67,16 @@ export function MeetingPlaybackView({
   const controllerRef = useRef<PlaybackController | null>(null);
   const savedTimeMs = useRef(0);
   const refreshAttempted = useRef(false);
+  // The picture, its controls and the timeline go full screen together, so pause and seek stay at hand.
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const onFullscreenChange = () => setIsFullscreen(
+      stageRef.current !== null && document.fullscreenElement === stageRef.current);
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
 
   useEffect(() => {
     setCurrentManifest(manifest);
@@ -98,7 +108,6 @@ export function MeetingPlaybackView({
     currentManifest?.muxed_video_source !== undefined;
   const isSeparateWithVideo = mediaMode === "separate" && playableVideoSources.length > 0;
   const needsAudio = mediaMode !== "muxed";
-  const mediaElement = isMuxed ? videoRef.current : audioRef.current;
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -142,20 +151,20 @@ export function MeetingPlaybackView({
       savedTimeMs.current = updated.currentTimeMs;
       setState(updated);
     };
+    // Metadata is enough to play, pause and seek. A browser-recorded WebM reports an infinite duration
+    // (its header has none), so the duration must not gate the controls: the manifest supplies it.
     const onMetadata = () => {
-      setMediaReady(Number.isFinite(clock.duration) && clock.duration >= 0);
+      setMediaReady(true);
       updateState();
     };
-    const events = ["timeupdate", "seeked", "play", "pause", "ended", "ratechange", "volumechange"];
+    const events = ["timeupdate", "seeked", "play", "pause", "ended", "ratechange", "volumechange", "durationchange"];
     events.forEach((event) => clock.addEventListener(event, updateState));
     clock.addEventListener("loadedmetadata", onMetadata);
-    clock.addEventListener("durationchange", onMetadata);
-    if (Number.isFinite(clock.duration) && clock.duration >= 0) onMetadata();
+    if (clock.readyState >= HTMLMediaElement.HAVE_METADATA) onMetadata();
 
     return () => {
       events.forEach((event) => clock.removeEventListener(event, updateState));
       clock.removeEventListener("loadedmetadata", onMetadata);
-      clock.removeEventListener("durationchange", onMetadata);
       controller.destroy();
       if (controllerRef.current === controller) {
         controllerRef.current = null;
@@ -198,6 +207,20 @@ export function MeetingPlaybackView({
     if (videoWidth > 0 && videoHeight > 0) setVideoRatio(videoWidth / videoHeight);
   }
 
+  /** One button plays and pauses, whatever started playback (this button, a transcript turn, a speaker excerpt). */
+  function togglePlayback() {
+    const controller = controllerRef.current;
+    if (!controller) return;
+    if (controller.getState().isPlaying) controller.pause();
+    else void controller.resume();
+    setState(controller.getState());
+  }
+
+  function toggleFullscreen() {
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+    else void stageRef.current?.requestFullscreen().catch(() => undefined);
+  }
+
   const controlsDisabled = loading || !mediaReady || !currentManifest || Boolean(error);
   if (loading && !currentManifest) return <div className="meeting-playback-loading">
     <p role="status">{t("meeting:playbackLoading")}</p>
@@ -213,14 +236,18 @@ export function MeetingPlaybackView({
 
   const activeError = error ? t("meeting:playbackLoadFailed") : playbackError;
   const hasPlayableMedia = isMuxed || needsAudio;
-  const durationMs = state.durationMs;
+  const hasVideo = isMuxed || isSeparateWithVideo;
+  const manifestDurationMs = currentManifest.duration_seconds > 0 ? currentManifest.duration_seconds * 1000 : null;
+  const durationMs = state.durationMs ?? manifestDurationMs;
+  const onVideoClick = controlsDisabled ? undefined : togglePlayback;
 
   return (
-    <div className={`meeting-player${sidePanel && (isMuxed || isSeparateWithVideo) ? " meeting-player--docked" : ""}`}
+    <div className={`meeting-player${sidePanel && hasVideo ? " meeting-player--docked" : ""}`}
       style={{ "--meeting-video-ratio": videoRatio } as CSSProperties}>
       {loading && <p role="status">{t("meeting:playbackMetadataLoading")}</p>}
       {activeError && <p role="alert">{activeError}</p>}
       {!hasPlayableMedia && <p role="status">{t("meeting:playbackUnavailable")}</p>}
+      <div className="meeting-player-stage" ref={stageRef}>
       {isMuxed ? (
         <video
           ref={videoRef}
@@ -229,6 +256,8 @@ export function MeetingPlaybackView({
           playsInline
           onLoadedMetadata={handleVideoMetadata}
           onError={handleMediaError}
+          onClick={onVideoClick}
+          onDoubleClick={toggleFullscreen}
         />
       ) : (
         <>
@@ -247,6 +276,8 @@ export function MeetingPlaybackView({
               playsInline
               onLoadedMetadata={handleVideoMetadata}
               onError={handleMediaError}
+              onClick={onVideoClick}
+              onDoubleClick={toggleFullscreen}
             />
           )}
         </>
@@ -254,25 +285,11 @@ export function MeetingPlaybackView({
       <div className="meeting-player-controls" aria-label={t("meeting:controls")}>
         <Button variant="ghost" className="meeting-control-button"
           type="button"
-          aria-label={t("meeting:pause")}
+          aria-label={state.isPlaying ? t("meeting:pause") : t("meeting:play")}
           disabled={controlsDisabled}
-          onClick={() => {
-            controllerRef.current?.pause();
-            setState(controllerRef.current?.getState() ?? INITIAL_STATE);
-          }}
+          onClick={togglePlayback}
         ><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16">
-          <path d="M4 3h3v10H4zM9 3h3v10H9z" fill="currentColor" />
-        </svg></Button>
-        <Button variant="ghost" className="meeting-control-button"
-          type="button"
-          aria-label={t("meeting:resume")}
-          disabled={controlsDisabled}
-          onClick={() => {
-            void controllerRef.current?.resume();
-            setState(controllerRef.current?.getState() ?? INITIAL_STATE);
-          }}
-        ><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16">
-          <path d="M5 3 13 8 5 13Z" fill="currentColor" />
+          <path d={state.isPlaying ? "M4 3h3v10H4zM9 3h3v10H9z" : "M5 3 13 8 5 13Z"} fill="currentColor" />
         </svg></Button>
         <label className="meeting-control-seek">
           <span className="meeting-sr-only">{t("meeting:seek")}</span>
@@ -335,10 +352,22 @@ export function MeetingPlaybackView({
             </select>
           </label>
         )}
+        {hasVideo && document.fullscreenEnabled && (
+          <Button variant="ghost" className="meeting-control-button"
+            type="button"
+            aria-label={isFullscreen ? t("meeting:exitFullscreen") : t("meeting:fullscreen")}
+            disabled={controlsDisabled}
+            onClick={toggleFullscreen}
+          ><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16">
+            <path d={isFullscreen ? "M6 2v4H2M10 2v4h4M6 14v-4H2M10 14v-4h4" : "M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"}
+              fill="none" stroke="currentColor" strokeWidth="1.5" />
+          </svg></Button>
+        )}
       </div>
       <SpeakerTimeline turns={timelineTurns} durationMs={currentManifest.duration_seconds * 1000}
         currentTimeMs={state.currentTimeMs} keyPointTimes={keyPointTimes} disabled={controlsDisabled}
         onSeek={timeMs => controllerRef.current?.seekTo(timeMs)} />
+      </div>
       {sidePanel}
     </div>
   );

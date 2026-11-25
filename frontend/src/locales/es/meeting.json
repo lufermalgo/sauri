@@ -58,12 +58,14 @@
   "controls": "Controles de reproducción",
   "pause": "Pausar",
   "play": "Reproducir",
-  "resume": "Reproducir o reanudar",
   "seek": "Posición de reproducción",
   "speed": "Velocidad de reproducción",
   "volume": "Volumen",
   "mute": "Silenciar",
   "unmute": "Activar sonido",
   "quality": "Calidad de video",
+  "fullscreen": "Pantalla completa",
+  "exitFullscreen": "Salir de pantalla completa",
+  "resizeSidePanel": "Cambiar el ancho del panel de resumen",
   "datesTooltip": "Grabada el {{recorded}} · Procesada el {{processed}}"
 }
